@@ -13,8 +13,8 @@ type TriggerApiResponse = {
   requestId?: string; // Include original request ID for tracing
 };
 
-// TODO: Replace with actual Netlify Background Function URL after deployment
-const NETLIFY_BACKGROUND_FUNCTION_URL = 'PLACEHOLDER_NETLIFY_FUNCTION_URL'; 
+// Replace placeholder with actual Netlify Background Function URL
+const NETLIFY_BACKGROUND_FUNCTION_URL = 'https://ilovewine.netlify.app/.netlify/functions/process-wine-analysis'; 
 
 // Simple validation for base64 image (can be expanded)
 function validateBase64Image(base64String: string): boolean {
