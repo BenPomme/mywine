@@ -2,17 +2,18 @@
 const nextConfig = {
   reactStrictMode: true,
   // Static export for GitHub Pages - this is crucial
-  output: 'export',
+  // output: 'export',
   // Disable image optimization for static export
   images: {
     unoptimized: true,
   },
   // Use correct basePath for GitHub Pages
-  basePath: process.env.NODE_ENV === 'production' ? '/mywine' : '',
+  // basePath: process.env.NODE_ENV === 'production' ? '/mywine' : '',
   // Use trailing slashes for better compatibility with static hosting
-  trailingSlash: true,
+  // trailingSlash: true,
   // Any additional webpack configs
   webpack: (config) => {
+    // You can add webpack customizations here if needed
     return config;
   },
 }
