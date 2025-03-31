@@ -86,7 +86,7 @@ async function analyzeImageWithOpenAI(image: string) {
           content: [
             {
               type: "text",
-              text: "Analyze this image and identify ALL wine bottles visible. For each wine, extract: name, vintage, producer, region, and varietal. Return a JSON array where each object represents a wine with these fields. If there are multiple wines, list all of them. Format: [{wine1}, {wine2}, ...]. Do not include markdown formatting or backticks."
+              text: "Analyze this image to identify the primary wine bottle. Extract only its name, vintage (if visible), and producer. Return a JSON object with these fields: name, vintage, producer. If multiple wines are clearly visible, return an array of these objects. Format: {wine1} or [{wine1}, {wine2}, ...]. Do not include markdown formatting or backticks."
             },
             {
               type: "image_url",
@@ -175,7 +175,7 @@ async function analyzeImageWithOpenAI(image: string) {
   }
 }
 
-async function getWineReviews(wineName: string, winery: string, year: string, apiKey: string): Promise<string[]> {
+async function getWineReviews(wineName: string, winery: string, year: string, apiKey: string): Promise<{ snippet: string, source: string }[]> {
    if (!wineName || !apiKey) return [];
    // Modified query to target specific sites
    const siteQuery = `site:winespectator.com OR site:vivino.com OR site:decanter.com`;
@@ -183,12 +183,19 @@ async function getWineReviews(wineName: string, winery: string, year: string, ap
    console.log("Executing targeted Serper search:", searchQuery); // Log the query
    try {
        const response = await axios.post('https://google.serper.dev/search',
-         { q: searchQuery, gl: 'us', num: 5 }, // Keep num=5 for focused results
+         // Fetch fewer results
+         { q: searchQuery, gl: 'us', num: 3 },
          { headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' } }
        );
 
        if (response.data.organic && response.data.organic.length > 0) {
-           return response.data.organic.map((item: any) => item.snippet || '').filter(Boolean);
+           // Return snippet and source (link) for each review
+           return response.data.organic
+             .map((item: any) => ({ 
+               snippet: item.snippet || '', 
+               source: item.link || 'Unknown Source' 
+             }))
+             .filter((item: any) => item.snippet); // Ensure snippet exists
        }
        return [];
    } catch (error) {
@@ -197,14 +204,11 @@ async function getWineReviews(wineName: string, winery: string, year: string, ap
    }
 }
 
-async function extractRatingFromReviews(reviews: string[]): Promise<{ score: number, source: string, review?: string }> {
-  // If no reviews, return default 0 rating
+async function extractRatingFromReviews(reviews: { snippet: string, source: string }[]): Promise<{ score: number, source: string, review?: string }> {
   if (!reviews || reviews.length === 0) {
-    // This case should ideally be handled before calling this function if no reviews were found
     return { score: 0, source: 'No reviews provided' };
   }
 
-  // Look for numbers followed by /100, /5, pts, or percentage
   const ratingPatterns = [
     /(\d{1,3})\s*\/\s*100/i,
     /(\d{1,2})\s*\/\s*5/i,
@@ -217,36 +221,30 @@ async function extractRatingFromReviews(reviews: string[]): Promise<{ score: num
 
   let highestScore = 0;
   let ratingSource = '';
-  let bestReview = '';
+  let bestReviewSnippet = '';
 
-  // Process each review looking for ratings
   reviews.forEach(review => {
-    if (!review) return;
+    if (!review || !review.snippet) return;
+    const reviewText = review.snippet;
+    const reviewSource = review.source; // Use the source from the object
 
-    let reviewText = typeof review === 'string' ? review : (review as any).snippet || (review as any).text || '';
-    let reviewSource = typeof review === 'string' ? 'Review Snippet' : (review as any).source || 'Review Snippet';
-
-    // Try each pattern to find ratings
     for (const pattern of ratingPatterns) {
       const match = reviewText.match(pattern);
       if (match) {
         let score = parseInt(match[1]);
-
         // Convert to 100-point scale
         if (pattern.toString().includes('/5')) {
           score = Math.round((score / 5) * 100);
         } else if (pattern.toString().includes('stars')) {
           score = Math.round((score / 5) * 100);
         }
-
         // Cap at 100
         score = Math.min(score, 100);
 
-        // Update if this is the highest score
         if (score > highestScore) {
           highestScore = score;
-          ratingSource = reviewSource; // Use the source if available, otherwise 'Review Snippet'
-          bestReview = reviewText;
+          ratingSource = reviewSource; // Assign the source URL
+          bestReviewSnippet = reviewText;
         }
         break; // Found a rating in this review, move to the next one
       }
@@ -255,10 +253,10 @@ async function extractRatingFromReviews(reviews: string[]): Promise<{ score: num
 
   // If no ratings found via regex, return 0. DO NOT call AI fallback here.
   if (highestScore === 0) {
-    return { score: 0, source: 'No rating found via regex', review: reviews.join('\n').substring(0, 100) + '...' };
+    return { score: 0, source: 'No rating found via regex', review: reviews.map(r => r.snippet).join('\n').substring(0, 100) + '...' };
   }
 
-  return { score: highestScore, source: ratingSource, review: bestReview };
+  return { score: highestScore, source: ratingSource, review: bestReviewSnippet };
 }
 
 async function estimateScoreFromReviews(reviews: string[]): Promise<{ score: number, source: string, review?: string }> {
@@ -499,42 +497,37 @@ export default async function handler(
         try {
           console.log(`[${requestId}] Processing wine: ${wineInfo.wineName}`);
 
-          // Step 1: Fetch reviews from specific sites
+          // Step 1: Fetch reviews (now returns objects with snippet & source)
           const reviews = await getWineReviews(
             wineInfo.wineName,
             wineInfo.producer || '',
             wineInfo.vintage || '',
             serperApiKey
           );
-          console.log(`[${requestId}] Fetched ${reviews.length} review snippets from targeted sites for ${wineInfo.wineName}.`);
+          console.log(`[${requestId}] Fetched ${reviews.length} review objects from targeted sites for ${wineInfo.wineName}.`);
 
           let ratingInfo: { score: number; source: string; review?: string };
-          let aiSummary: string = ''; // Initialize summary
+          let aiSummary: string = '';
 
           if (reviews.length > 0) {
             // Step 2a: If reviews found, get rating via Regex ONLY, and generate summary
-            // We run rating extraction and summary generation in parallel
             const [ratingResult, summaryResult] = await Promise.all([
-              extractRatingFromReviews(reviews), // Uses Regex only
-              generateAISummary(reviews, process.env.OPENAI_API_KEY || '') // Uses reviews
+              extractRatingFromReviews(reviews), // Updated to take review objects
+              generateAISummary(reviews, process.env.OPENAI_API_KEY || '') // Updated to take review objects
             ]);
             ratingInfo = ratingResult;
             aiSummary = summaryResult;
-            console.log(`[${requestId}] Extracted Rating (Regex Only): ${ratingInfo.score}% for ${wineInfo.wineName}`);
+            console.log(`[${requestId}] Extracted Rating (Regex Only): ${ratingInfo.score}% from ${ratingInfo.source} for ${wineInfo.wineName}`);
             console.log(`[${requestId}] Generated AI Summary (from targeted reviews) for ${wineInfo.wineName}: ${aiSummary || 'None'}`);
           } else {
             // Step 2b: If NO reviews found on specific sites, estimate score using AI
-            // Note: estimateScoreFromReviews uses an empty review array here.
             console.log(`[${requestId}] No reviews found on targeted sites for ${wineInfo.wineName}. Falling back to AI score estimation.`);
             ratingInfo = await estimateScoreFromReviews(reviews); // Pass empty reviews array
-            // No reviews, so no summary can be generated
             aiSummary = 'No reviews found on targeted sites to summarize.';
             console.log(`[${requestId}] Estimated Rating (AI Fallback): ${ratingInfo.score}% for ${wineInfo.wineName}`);
           }
 
-          // Step 3: Fetch image (can run in parallel with Step 2 if needed, but let's keep it simple for now)
-          // Or maybe fetch image only if reviews were found?
-          // Let's fetch it always for now.
+          // Step 3: Fetch image
           const imageUrl = await fetchWineImage(wineInfo.wineName, serperApiKey);
           console.log(`[${requestId}] Fetched Image URL for ${wineInfo.wineName}: ${imageUrl || 'None'}`);
 
@@ -547,12 +540,13 @@ export default async function handler(
             varietal: wineInfo.varietal || undefined,
             imageUrl: imageUrl || undefined,
             score: ratingInfo.score,
-            ratingSource: ratingInfo.source,
+            ratingSource: ratingInfo.source, // Now contains the source URL or 'No rating found...'
             summary: aiSummary,
-            additionalReviews: reviews.map(reviewString => ({
-              source: 'Review Snippet',
-              rating: null,
-              review: reviewString
+            // Ensure additionalReviews uses the correct structure
+            additionalReviews: reviews.map(review => ({
+              source: review.source, // Use the captured source
+              rating: null, // Still null as we don't get ratings per snippet
+              review: review.snippet // Use the snippet text
             }))
           };
         } catch (error) {
