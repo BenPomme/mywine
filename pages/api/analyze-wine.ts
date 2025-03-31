@@ -124,38 +124,31 @@ export default async function handler(
     console.log(`[${requestId}] [${jobId}] Image uploaded to Vercel Blob: ${blobResult.url}`);
 
     // --- 3. Trigger Netlify Background Function --- 
-    // Placeholder check - replace before deployment!
-    if (NETLIFY_BACKGROUND_FUNCTION_URL === 'PLACEHOLDER_NETLIFY_FUNCTION_URL') {
-        console.warn(`[${requestId}] [${jobId}] Netlify Function URL is not set! Cannot trigger background job.`);
-        // In a real scenario, you might want to handle this more gracefully
-        // For now, we'll update status and return processing, assuming manual trigger later
-    } else {
-        console.log(`[${requestId}] [${jobId}] Triggering Netlify Background Function at ${NETLIFY_BACKGROUND_FUNCTION_URL}...`);
-        try {
-            // Send jobId and the public URL of the image
-            await axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, {
-                jobId: jobId,
-                imageUrl: blobResult.url,
-                requestId: requestId // Pass request ID for tracing
-            });
-            console.log(`[${requestId}] [${jobId}] Netlify function triggered successfully.`);
-        } catch (triggerError: any) {
-            console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, triggerError.message);
-            // Decide how to handle trigger failure. Maybe update KV status to 'trigger_failed'?
-            await kv.set(jobId, { 
-              status: 'trigger_failed', 
-              error: 'Failed to trigger background processing',
-              imageUrl: blobResult.url // Store URL even if trigger failed
-            }, { ex: 3600 });
-            // Return failure to the client
-            return res.status(500).json({ 
-                success: false, 
-                message: 'Failed to start background analysis job.',
-                status: 'failed',
-                jobId: jobId,
-                requestId
-            });
-        }
+    console.log(`[${requestId}] [${jobId}] Triggering Netlify Background Function at ${NETLIFY_BACKGROUND_FUNCTION_URL}...`);
+    try {
+        // Send jobId and the public URL of the image
+        await axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, {
+            jobId: jobId,
+            imageUrl: blobResult.url,
+            requestId: requestId // Pass request ID for tracing
+        });
+        console.log(`[${requestId}] [${jobId}] Netlify function triggered successfully.`);
+    } catch (triggerError: any) {
+        console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, triggerError.message);
+        // Decide how to handle trigger failure. Maybe update KV status to 'trigger_failed'?
+        await kv.set(jobId, { 
+          status: 'trigger_failed', 
+          error: 'Failed to trigger background processing',
+          imageUrl: blobResult.url // Store URL even if trigger failed
+        }, { ex: 3600 });
+        // Return failure to the client
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Failed to start background analysis job.',
+            status: 'failed',
+            jobId: jobId,
+            requestId
+        });
     }
 
     // --- 4. Update KV Status to Processing --- 
