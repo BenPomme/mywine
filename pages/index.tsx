@@ -57,7 +57,7 @@ export default function Home() {
             rating: {
               score: wineData.score || 0,
               source: wineData.ratingSource || 'AI Analysis',
-              review: wineData.summary || ''
+              review: ''
             },
             additionalReviews: Array.isArray(wineData.additionalReviews) 
               ? wineData.additionalReviews.map((review: any) => {
@@ -88,7 +88,7 @@ export default function Home() {
           rating: {
             score: data.score || 0,
             source: data.ratingSource || 'AI Analysis',
-            review: data.summary || ''
+            review: ''
           },
           additionalReviews: Array.isArray(data.additionalReviews) 
             ? data.additionalReviews.map((review: any) => {
