@@ -351,11 +351,13 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
                  };
              } catch (wineError: any) {
                 console.error(`[${triggerRequestId}] [${jobId}] Error processing wine ${wineInfo.name}:`, wineError);
-                // Return partial data with error
+                // Return partial data with error, including default score/source
                  return {
                      name: wineInfo.name || 'Unknown Wine',
                      vintage: wineInfo.vintage || undefined,
                      producer: wineInfo.producer || undefined,
+                     score: 0, // Add default score
+                     ratingSource: 'Processing Error', // Add default source
                      error: `Failed to process complete data: ${wineError.message}`
                  };
             }
