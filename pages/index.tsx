@@ -169,13 +169,25 @@ export default function Home() {
       // Handle 504 Gateway Timeout specifically
       if (response.status === 504) {
         console.log("Received 504 timeout, but continuing with polling...");
-        // Try to get the jobId from the response headers or body
-        const data = await response.json().catch(() => ({}));
-        if (data.jobId) {
-          console.log(`Analysis job started with ID: ${data.jobId}`);
-          setJobId(data.jobId);
+        // Try to get the jobId from the response headers
+        const jobId = response.headers.get('x-job-id');
+        if (jobId) {
+          console.log(`Analysis job started with ID: ${jobId}`);
+          setJobId(jobId);
           setPollingStatus('polling');
           return; // Exit early but keep polling
+        }
+        // If no jobId in headers, try to get it from the response body
+        try {
+          const data = await response.json();
+          if (data.jobId) {
+            console.log(`Analysis job started with ID: ${data.jobId}`);
+            setJobId(data.jobId);
+            setPollingStatus('polling');
+            return;
+          }
+        } catch (e) {
+          console.log("Could not parse response body after 504");
         }
       }
       
