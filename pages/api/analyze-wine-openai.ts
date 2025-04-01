@@ -92,7 +92,7 @@ export default async function handler(
             {
               type: "image_url",
               image_url: {
-                url: url,
+                url: url as string,
                 detail: "high"
               }
             }
