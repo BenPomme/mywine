@@ -134,12 +134,12 @@ export default async function handler(
       messages: [
         {
           role: "system",
-          content: "You are a wine expert assistant that can identify wines from images of bottles or labels. For each wine, provide detailed information including the producer/winery, name, vintage year, region, grape varieties, and any other relevant details visible in the image. If possible, estimate the wine's quality and provide tasting notes based on your knowledge of the wine."
+          content: "You are a wine expert assistant that can identify wines from images of bottles or labels. For each wine detected in the image, provide detailed information including the producer/winery, name, vintage year, region, grape varieties, and any other relevant details visible in the image. If possible, estimate the wine's quality and provide tasting notes based on your knowledge of the wine. If multiple wines are visible in the image, analyze each one separately."
         },
         {
           role: "user",
           content: [
-            { type: "text", text: "Identify this wine from the image and provide details about it." },
+            { type: "text", text: "Identify all wines visible in this image and provide details about each one. If there are multiple wines, analyze each one separately." },
             {
               type: "image_url",
               image_url: {
@@ -156,16 +156,82 @@ export default async function handler(
     console.log(`[${requestId}] [${jobId}] OpenAI analysis complete`);
     console.log(`[${requestId}] [${jobId}] OpenAI response received: "${wineAnalysis.substring(0, 100)}..."`);
 
-    // Parse the analysis into structured data
-    // This is a simplified parsing logic - you may want to improve this
-    const wineData = parseWineDetails(wineAnalysis);
-    console.log(`[${requestId}] [${jobId}] Parsed wine data:`, JSON.stringify(wineData, null, 2));
+    // Parse the analysis into structured data for multiple wines
+    const wineDataArray = parseWineDetails(wineAnalysis);
+    console.log(`[${requestId}] [${jobId}] Parsed wine data:`, JSON.stringify(wineDataArray, null, 2));
+
+    // Search for wine images using OpenAI's web search tool
+    const winesWithImages = await Promise.all(wineDataArray.map(async (wine) => {
+      try {
+        const searchQuery = `${wine.producer} ${wine.name} ${wine.vintage} wine bottle`;
+        const searchCompletion = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: "You are a wine expert assistant. Search for an image of the specified wine bottle and return the first image URL from the search results."
+            },
+            {
+              role: "user",
+              content: `Search for an image of this wine: ${searchQuery}`
+            }
+          ],
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "web_search",
+                description: "Search the web for information about a wine",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    query: {
+                      type: "string",
+                      description: "The search query"
+                    }
+                  },
+                  required: ["query"]
+                }
+              }
+            }
+          ],
+          tool_choice: "auto"
+        });
+
+        const toolCall = searchCompletion.choices[0]?.message?.tool_calls?.[0];
+        if (toolCall?.function?.name === "web_search") {
+          const searchResult = JSON.parse(toolCall.function.arguments);
+          const searchResponse = await fetch(`https://api.openai.com/v1/web/search`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+              query: searchResult.query,
+              type: 'image'
+            })
+          });
+
+          const searchData = await searchResponse.json();
+          if (searchData.images?.[0]?.url) {
+            return {
+              ...wine,
+              imageUrl: searchData.images[0].url
+            };
+          }
+        }
+      } catch (error) {
+        console.error(`Error searching for wine image:`, error);
+      }
+      return wine;
+    }));
     
     // Store result in KV
     await kv.hset(`job:${jobId}`, {
       status: 'completed',
       data: {
-        wines: [wineData],
+        wines: winesWithImages,
         imageUrl: url,
         rawAnalysis: wineAnalysis
       },
@@ -175,13 +241,13 @@ export default async function handler(
 
     console.log(`[${requestId}] [${jobId}] Stored results in KV, returning response`);
     
-    // Return results immediately - make sure we're not streaming and returning a complete response
+    // Return results immediately
     const responseData = {
       jobId,
       status: 'completed',
       requestId,
       data: {
-        wines: [wineData],
+        wines: winesWithImages,
         imageUrl: url
       }
     };
@@ -214,100 +280,105 @@ export default async function handler(
 }
 
 // Helper function to parse the unstructured text from OpenAI into structured data
-function parseWineDetails(analysisText: string): WineData {
-  // Create a default structure
-  const wineData: WineData = {
-    name: '',
-    producer: '',
-    vintage: '',
-    region: '',
-    varietal: '',
-    type: '',
-    score: 0,
-    summary: analysisText,
-    imageUrl: '',
-    ratingSource: 'AI Analysis',
-    additionalReviews: []
-  };
+function parseWineDetails(analysisText: string): WineData[] {
+  // Split the analysis text into sections for each wine
+  const wineSections = analysisText.split(/(?=\d+\.|Wine \d+:|Bottle \d+:|First|Second|Third|Fourth|Fifth)/i);
+  
+  return wineSections.map(section => {
+    // Create a default structure for each wine
+    const wineData: WineData = {
+      name: '',
+      producer: '',
+      vintage: '',
+      region: '',
+      varietal: '',
+      type: '',
+      score: 0,
+      summary: section.trim(),
+      imageUrl: '',
+      ratingSource: 'AI Analysis',
+      additionalReviews: []
+    };
 
-  // Extract producer/winery
-  const producerMatch = analysisText.match(/(?:Producer|Winery|Maker):\s*([^,\n.]+)/i);
-  if (producerMatch) wineData.producer = producerMatch[1].trim();
+    // Extract producer/winery
+    const producerMatch = section.match(/(?:Producer|Winery|Maker):\s*([^,\n.]+)/i);
+    if (producerMatch) wineData.producer = producerMatch[1].trim();
 
-  // Extract name
-  const nameMatch = analysisText.match(/(?:Name|Wine):\s*([^,\n.]+)/i);
-  if (nameMatch) wineData.name = nameMatch[1].trim();
-  
-  // Extract vintage
-  const vintageMatch = analysisText.match(/(?:Vintage|Year):\s*(\d{4})/i);
-  if (vintageMatch) wineData.vintage = vintageMatch[1];
+    // Extract name
+    const nameMatch = section.match(/(?:Name|Wine):\s*([^,\n.]+)/i);
+    if (nameMatch) wineData.name = nameMatch[1].trim();
+    
+    // Extract vintage
+    const vintageMatch = section.match(/(?:Vintage|Year):\s*(\d{4})/i);
+    if (vintageMatch) wineData.vintage = vintageMatch[1];
 
-  // Extract region
-  const regionMatch = analysisText.match(/(?:Region|Appellation):\s*([^,\n.]+)/i);
-  if (regionMatch) wineData.region = regionMatch[1].trim();
-  
-  // Extract grape variety
-  const varietalMatch = analysisText.match(/(?:Grape|Varietal|Variety):\s*([^,\n.]+)/i);
-  if (varietalMatch) wineData.varietal = varietalMatch[1].trim();
-  
-  // Extract wine type
-  const typeMatch = analysisText.match(/(?:Type):\s*(red|white|rosé|rose|sparkling|dessert)/i);
-  if (typeMatch) wineData.type = typeMatch[1].trim();
-  
-  // Extract score if available
-  const scoreMatch = analysisText.match(/(?:Rating|Score|Points):\s*(\d{1,2}(?:\.\d)?)\s*(?:\/\s*\d{1,3}|points)?/i);
-  if (scoreMatch) {
-    const scoreValue = parseFloat(scoreMatch[1]);
-    // Normalize to a 100-point scale if needed
-    if (scoreValue <= 5) {
-      wineData.score = scoreValue * 20; // Convert 5-point scale to 100
-    } else if (scoreValue <= 10) {
-      wineData.score = scoreValue * 10; // Convert 10-point scale to 100
-    } else if (scoreValue <= 20) {
-      wineData.score = scoreValue * 5; // Convert 20-point scale to 100
+    // Extract region
+    const regionMatch = section.match(/(?:Region|Appellation):\s*([^,\n.]+)/i);
+    if (regionMatch) wineData.region = regionMatch[1].trim();
+    
+    // Extract grape variety
+    const varietalMatch = section.match(/(?:Grape|Varietal|Variety):\s*([^,\n.]+)/i);
+    if (varietalMatch) wineData.varietal = varietalMatch[1].trim();
+    
+    // Extract wine type
+    const typeMatch = section.match(/(?:Type):\s*(red|white|rosé|rose|sparkling|dessert)/i);
+    if (typeMatch) wineData.type = typeMatch[1].trim();
+    
+    // Extract score if available
+    const scoreMatch = section.match(/(?:Rating|Score|Points):\s*(\d{1,2}(?:\.\d)?)\s*(?:\/\s*\d{1,3}|points)?/i);
+    if (scoreMatch) {
+      const scoreValue = parseFloat(scoreMatch[1]);
+      // Normalize to a 100-point scale if needed
+      if (scoreValue <= 5) {
+        wineData.score = scoreValue * 20; // Convert 5-point scale to 100
+      } else if (scoreValue <= 10) {
+        wineData.score = scoreValue * 10; // Convert 10-point scale to 100
+      } else if (scoreValue <= 20) {
+        wineData.score = scoreValue * 5; // Convert 20-point scale to 100
+      } else {
+        wineData.score = scoreValue; // Already on 100-point scale
+      }
     } else {
-      wineData.score = scoreValue; // Already on 100-point scale
-    }
-  } else {
-    // Estimate a score based on sentiment in the text
-    const positiveTerms = ['excellent', 'outstanding', 'superb', 'exceptional', 'great', 'remarkable', 'fantastic'];
-    const mediumTerms = ['good', 'nice', 'pleasant', 'enjoyable', 'decent', 'fine'];
-    const negativeTerms = ['poor', 'disappointing', 'mediocre', 'bad', 'flawed'];
-    
-    let scoreEstimate = 85; // Default medium-high score
-    
-    for (const term of positiveTerms) {
-      if (analysisText.toLowerCase().includes(term)) {
-        scoreEstimate += 5;
-        break;
+      // Estimate a score based on sentiment in the text
+      const positiveTerms = ['excellent', 'outstanding', 'superb', 'exceptional', 'great', 'remarkable', 'fantastic'];
+      const mediumTerms = ['good', 'nice', 'pleasant', 'enjoyable', 'decent', 'fine'];
+      const negativeTerms = ['poor', 'disappointing', 'mediocre', 'bad', 'flawed'];
+      
+      let scoreEstimate = 85; // Default medium-high score
+      
+      for (const term of positiveTerms) {
+        if (section.toLowerCase().includes(term)) {
+          scoreEstimate += 5;
+          break;
+        }
       }
-    }
-    
-    for (const term of mediumTerms) {
-      if (analysisText.toLowerCase().includes(term)) {
-        scoreEstimate = 80;
-        break;
+      
+      for (const term of mediumTerms) {
+        if (section.toLowerCase().includes(term)) {
+          scoreEstimate = 80;
+          break;
+        }
       }
-    }
-    
-    for (const term of negativeTerms) {
-      if (analysisText.toLowerCase().includes(term)) {
-        scoreEstimate = 70;
-        break;
+      
+      for (const term of negativeTerms) {
+        if (section.toLowerCase().includes(term)) {
+          scoreEstimate = 70;
+          break;
+        }
       }
+      
+      wineData.score = Math.min(100, scoreEstimate); // Cap at 100
     }
-    
-    wineData.score = Math.min(100, scoreEstimate); // Cap at 100
-  }
 
-  // Extract tasting notes as reviews
-  const tastingMatch = analysisText.match(/(?:Tasting Notes|Taste|Palate|Notes|Flavors):\s*([^.]+)/i);
-  if (tastingMatch) {
-    wineData.additionalReviews = [{
-      source: 'AI Analysis',
-      review: tastingMatch[1].trim()
-    }];
-  }
+    // Extract tasting notes as reviews
+    const tastingMatch = section.match(/(?:Tasting Notes|Taste|Palate|Notes|Flavors):\s*([^.]+)/i);
+    if (tastingMatch) {
+      wineData.additionalReviews = [{
+        source: 'AI Analysis',
+        review: tastingMatch[1].trim()
+      }];
+    }
 
-  return wineData;
+    return wineData;
+  }).filter(wine => wine.name || wine.producer); // Only return wines that have at least a name or producer
 } 

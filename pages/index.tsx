@@ -16,7 +16,6 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<PollingStatus>('idle');
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to hold interval ID
-  const [useOpenAIOnly, setUseOpenAIOnly] = useState<boolean>(false);
 
   // --- Polling Logic --- 
   useEffect(() => {
@@ -159,10 +158,7 @@ export default function Home() {
       // Submit image analysis request
       console.log('Submitting image analysis request...');
       
-      // Choose which endpoint to use based on the toggle
-      const endpoint = useOpenAIOnly ? '/api/analyze-wine-openai' : '/api/analyze-wine';
-      
-      const response = await fetch(endpoint, {
+      const response = await fetch('/api/analyze-wine-openai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -183,54 +179,50 @@ export default function Home() {
         throw new Error('No job ID received from server');
       }
 
-      // For OpenAI-only endpoint, we get the results immediately
-      if (useOpenAIOnly) {
-        if (responseData.status === 'completed' && responseData.data?.wines) {
-          // Format wine data for display
-          const wines = responseData.data.wines.map((wineData: any) => ({
-            name: wineData.name || '',
-            winery: wineData.producer || wineData.winery || '',
-            year: wineData.vintage || wineData.year || '',
-            region: wineData.region || '',
-            grapeVariety: wineData.varietal || wineData.grapeVariety || '',
-            type: wineData.type || '',
-            imageUrl: wineData.imageUrl || '',
-            uploadedImageUrl: responseData.data.imageUrl || '',
+      if (responseData.status === 'completed' && responseData.data?.wines) {
+        // Format wine data for display
+        const wines = responseData.data.wines.map((wineData: any) => ({
+          name: wineData.name || '',
+          winery: wineData.producer || wineData.winery || '',
+          year: wineData.vintage || wineData.year || '',
+          region: wineData.region || '',
+          grapeVariety: wineData.varietal || wineData.grapeVariety || '',
+          type: wineData.type || '',
+          imageUrl: wineData.imageUrl || '',
+          uploadedImageUrl: responseData.data.imageUrl || '',
+          score: wineData.score || 0,
+          summary: wineData.summary || '',
+          aiSummary: wineData.summary || '',
+          rating: {
             score: wineData.score || 0,
-            summary: wineData.summary || '',
-            aiSummary: wineData.summary || '',
-            rating: {
-              score: wineData.score || 0,
-              source: wineData.ratingSource || 'AI Analysis',
-              review: ''
-            },
-            additionalReviews: Array.isArray(wineData.additionalReviews) 
-              ? wineData.additionalReviews.map((review: any) => {
-                  if (typeof review === 'string') {
-                    return { source: 'Review Snippet', review: review }; 
-                  }
-                  return { source: review.source || 'Review Snippet', review: review.review || '' };
-                })
-              : []
-          }));
-          
-          setWineDataList(wines);
-          setPollingStatus('completed');
-          setUploadState({ isLoading: false, error: null });
-          return;
-        }
+            source: wineData.ratingSource || 'AI Analysis',
+            review: ''
+          },
+          additionalReviews: Array.isArray(wineData.additionalReviews) 
+            ? wineData.additionalReviews.map((review: any) => {
+                if (typeof review === 'string') {
+                  return { source: 'Review Snippet', review: review }; 
+                }
+                return { source: review.source || 'Review Snippet', review: review.review || '' };
+              })
+            : []
+        }));
+        
+        setWineDataList(wines);
+        setPollingStatus('completed');
+        setUploadState({ isLoading: false, error: null });
+        return;
       }
 
-      // Start polling for results (for the original approach)
+      // Start polling for results
       setJobId(jobId);
       setPollingStatus('polling');
       startPolling(jobId);
 
     } catch (error: any) {
-      console.error('Error submitting analysis request:', error);
-      setPollingStatus('failed');
-      setUploadState({ isLoading: false, error: error.message || 'Failed to analyze image' });
-      setJobId(null);
+      console.error('Error uploading image:', error);
+      setUploadState({ isLoading: false, error: error.message });
+      setPollingStatus('idle');
     }
   };
 
@@ -344,22 +336,6 @@ export default function Home() {
             <p className="text-xl text-gray-600">
               Take a photo of a wine bottle or menu to get instant ratings and reviews
             </p>
-            <div className="mt-4 flex justify-center items-center">
-              <label className="flex items-center cursor-pointer">
-                <span className="mr-2 text-gray-700">Standard Mode</span>
-                <div className="relative">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only" 
-                    checked={useOpenAIOnly}
-                    onChange={() => setUseOpenAIOnly(!useOpenAIOnly)} 
-                  />
-                  <div className={`block w-14 h-8 rounded-full ${useOpenAIOnly ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                  <div className={`absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${useOpenAIOnly ? 'transform translate-x-6' : ''}`}></div>
-                </div>
-                <span className="ml-2 text-gray-700">OpenAI Only Mode</span>
-              </label>
-            </div>
           </header>
           
           <div className="max-w-4xl mx-auto">
