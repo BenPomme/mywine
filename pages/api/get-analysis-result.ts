@@ -77,8 +77,25 @@ export default async function handler(
       });
     }
 
+    // Handle the case where jobData doesn't have a status property
+    if (!jobData.status) {
+      console.error(`[${requestId}] Job data missing status for job ${jobId}`);
+      return res.status(200).json({
+        success: true,
+        status: 'processing', // Default to processing if status is missing
+        data: {
+          error: jobData.error,
+          imageUrl: jobData.imageUrl || (jobData.result as any)?.imageUrl,
+          wines: (jobData.result as any)?.wines || jobData.wines || [],
+          updatedAt: jobData.updatedAt,
+          createdAt: jobData.createdAt,
+          completedAt: jobData.completedAt || (jobData.result as any)?.completedAt
+        }
+      });
+    }
+
     // Type assertion for jobData
-    const job = jobData as JobResult;
+    const job = jobData as unknown as JobResult;
     console.log(`[${requestId}] Job status:`, job.status);
     console.log(`[${requestId}] Job details:`, JSON.stringify(job, null, 2));
 
