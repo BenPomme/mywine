@@ -74,6 +74,7 @@ export default async function handler(
   // Generate a request ID for logging
   const requestId = uuidv4();
   console.log(`[${requestId}] OpenAI-only analyze request received`);
+  console.log(`[${requestId}] DEPLOYMENT CHECK: Using updated GPT-4o version - April 1, 2025 @ ${new Date().toISOString()}`);
 
   // Generate a unique job ID at the beginning
   const jobId = uuidv4();
