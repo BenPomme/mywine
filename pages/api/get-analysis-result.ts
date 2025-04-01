@@ -37,6 +37,19 @@ export default async function handler(
   console.log(`Checking status for Job ID: ${jobId}`);
 
   try {
+    // Verify KV connection first
+    try {
+      console.log("Verifying KV connection...");
+      await kv.ping();
+      console.log("KV connection successful");
+    } catch (kvError) {
+      console.error("KV connection failed:", kvError);
+      return res.status(500).json({ 
+        status: 'not_found',
+        message: 'KV connection failed'
+      });
+    }
+
     // Fetch the job data from Vercel KV
     console.log(`Attempting to fetch job data from KV for Job ID: ${jobId}`);
     const result = await kv.get<JobResult>(jobId);
