@@ -81,6 +81,9 @@ export default async function handler(
   const jobId = uuidv4();
   console.log(`[${requestId}] Generated Job ID: ${jobId}`);
 
+  // Set the jobId in the response headers immediately
+  res.setHeader('x-job-id', jobId);
+
   try {
     // --- 1. Initial KV Status --- 
     await kv.set(jobId, { status: 'uploading', requestTimestamp: Date.now() }, { ex: 3600 }); // Set TTL (e.g., 1 hour)
