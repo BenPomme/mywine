@@ -2,6 +2,7 @@ import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 import axios from 'axios';
 import { OpenAI } from 'openai';
 import { kv } from '@vercel/kv'; // Use Vercel KV from the Netlify function
+import { v4 as uuidv4 } from 'uuid';
 
 // Define types (consider moving to a shared types file later)
 interface WineInfoInput {
@@ -248,171 +249,138 @@ async function fetchWineImage(wineName: string): Promise<string | null> {
     }
 }
 
+// --- 1. Initial Setup ---
+async function initializeKV() {
+    if (!process.env.KV_URL || !process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+        throw new Error('Missing required KV environment variables');
+    }
+    console.log('Initializing KV connection...');
+    try {
+        await kv.ping();
+        console.log('KV connection successful');
+    } catch (error) {
+        console.error('KV connection failed:', error);
+        throw error;
+    }
+}
 
-// --- Netlify Handler ---
+// --- 2. Main Handler ---
+export const handler = async (event: any) => {
+    const requestId = event.body?.requestId || uuidv4();
+    const jobId = event.body?.jobId;
+    const imageUrl = event.body?.imageUrl;
 
-const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
-    if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, body: JSON.stringify({ message: 'Method Not Allowed' }) };
+    console.log(`[${requestId}] [${jobId}] Netlify function started`);
+
+    if (!jobId || !imageUrl) {
+        console.error(`[${requestId}] [${jobId}] Missing required parameters:`, { jobId, imageUrl });
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: 'Missing required parameters' })
+        };
     }
 
-    let jobId: string | null = null;
-    let analysisStartTime = Date.now();
-
     try {
-        // Ensure required env vars are present
-        if (!process.env.SERPER_API_KEY || !process.env.OPENAI_API_KEY || !process.env.KV_URL || !process.env.KV_REST_API_TOKEN || !process.env.KV_REST_API_URL) {
-             console.error("Missing required environment variables (SERPER, OPENAI, KV)");
-             // Cannot update KV without credentials, maybe log to Netlify logs only?
-             return { statusCode: 500, body: JSON.stringify({ message: "Server configuration error: Missing environment variables." }) };
-        }
-         // Initialize OpenAI client now that we've checked the key
-         initializeOpenAI();
+        // Initialize KV connection
+        await initializeKV();
+        console.log(`[${requestId}] [${jobId}] KV initialized successfully`);
 
+        // --- 3. Process Image ---
+        console.log(`[${requestId}] [${jobId}] Starting image analysis...`);
+        const startTime = Date.now();
+        
+        // Analyze image using OpenAI
+        const wines = await analyzeImageWithOpenAI(imageUrl);
+        console.log(`[${requestId}] [${jobId}] OpenAI analysis complete, found ${wines.length} wines`);
 
-        const body = JSON.parse(event.body || '{}');
-        jobId = body.jobId;
-        const imageUrl = body.imageUrl;
-        const triggerRequestId = body.requestId || 'unknown'; // Get request ID from trigger
+        // --- 4. Process Each Wine ---
+        const processedWines = await Promise.all(wines.map(async (wine) => {
+            console.log(`[${requestId}] [${jobId}] Processing wine:`, wine.name);
+            
+            // Get wine image
+            const wineImageUrl = await fetchWineImage(wine.name || '');
+            console.log(`[${requestId}] [${jobId}] Wine image URL:`, wineImageUrl);
 
-        if (!jobId || !imageUrl) {
-            console.error(`[${triggerRequestId}] Missing jobId or imageUrl in background function trigger.`);
-            return { statusCode: 400, body: JSON.stringify({ message: "Missing jobId or imageUrl" }) };
-        }
+            // Get wine reviews
+            const reviews = await getWineReviews(wine.name || '', wine.producer || '', wine.vintage || '');
+            console.log(`[${requestId}] [${jobId}] Found ${reviews.length} reviews`);
 
-        console.log(`[${triggerRequestId}] [${jobId}] Background processing started for image: ${imageUrl}`);
-        await kv.set(jobId, { status: 'processing_started', imageUrl, processingTimestamp: analysisStartTime }, { ex: 3600 });
+            // Extract rating
+            const rating = await extractRatingFromReviews(reviews);
+            console.log(`[${requestId}] [${jobId}] Extracted rating:`, rating);
 
-        // Step 1: Analyze image using URL
-        const identifiedWinesInfo: WineInfoInput[] = await analyzeImageWithOpenAI(imageUrl);
+            // Estimate score
+            const score = await estimateScoreFromReviews(reviews);
+            console.log(`[${requestId}] [${jobId}] Estimated score:`, score);
 
-        if (identifiedWinesInfo.length === 0) {
-            console.log(`[${triggerRequestId}] [${jobId}] No wine identified by OpenAI Vision.`);
-            await kv.set(jobId, {
-                status: 'failed',
-                error: 'Could not identify any wine in the image.',
-                imageUrl,
-                completionTimestamp: Date.now(),
-                durationMs: Date.now() - analysisStartTime
-            }, { ex: 3600 });
-            return { statusCode: 200, body: JSON.stringify({ message: "No wine identified" }) }; // Return 200 OK as the function itself completed
-        }
-        console.log(`[${triggerRequestId}] [${jobId}] Identified ${identifiedWinesInfo.length} wine(s)`);
+            // Generate summary
+            const summary = await generateAISummary(reviews);
+            console.log(`[${requestId}] [${jobId}] Generated summary`);
 
-        // Step 2: Process each identified wine
-        const processedWinesPromises = identifiedWinesInfo.map(async (wineInfo): Promise<ProcessedWine> => {
-             const wineProcessStartTime = Date.now();
-             try {
-                 console.log(`[${triggerRequestId}] [${jobId}] Processing wine: ${wineInfo.name}`);
-                 // Fetch reviews for this specific wine
-                 const reviews = await getWineReviews(wineInfo.name || '', wineInfo.producer || '', wineInfo.vintage || '');
-                 console.log(`[${triggerRequestId}] [${jobId}] Fetched ${reviews.length} review snippets for ${wineInfo.name}.`);
+            return {
+                ...wine,
+                imageUrl: wineImageUrl,
+                score,
+                ratingSource: rating.source,
+                summary,
+                additionalReviews: reviews.slice(0, 2).map(review => ({
+                    source: 'Review Snippet',
+                    review
+                }))
+            };
+        }));
 
-                 let ratingInfo: WineRating;
-                 let aiSummary: string = '';
-
-                 if (reviews.length > 0) {
-                    // If reviews found, get rating via Regex ONLY, and generate summary in parallel
-                    const [ratingResult, summaryResult] = await Promise.all([
-                        extractRatingFromReviews(reviews),
-                        generateAISummary(reviews)
-                    ]);
-                    ratingInfo = ratingResult;
-                    aiSummary = summaryResult;
-                    console.log(`[${triggerRequestId}] [${jobId}] Extracted Rating (Regex): ${ratingInfo.score}% for ${wineInfo.name}`);
-                 } else {
-                     // If NO reviews found, estimate score using AI
-                     console.log(`[${triggerRequestId}] [${jobId}] No reviews found for ${wineInfo.name}. Falling back to AI score estimation.`);
-                     ratingInfo = await estimateScoreFromReviews(reviews); // Pass empty array
-                     aiSummary = 'No reviews found on targeted sites to summarize.';
-                     console.log(`[${triggerRequestId}] [${jobId}] Estimated Rating (AI): ${ratingInfo.score}% for ${wineInfo.name}`);
-                 }
-
-                 // Fetch image (can run in parallel?)
-                 const detailImageUrl = await fetchWineImage(wineInfo.name || '');
-                 console.log(`[${triggerRequestId}] [${jobId}] Fetched detail Image URL for ${wineInfo.name}: ${detailImageUrl || 'None'}`);
-
-                 console.log(`[${triggerRequestId}] [${jobId}] Finished processing wine ${wineInfo.name} in ${Date.now() - wineProcessStartTime}ms`);
-                 // Return comprehensive wine data
-                 return {
-                     name: wineInfo.name || 'Unknown Wine',
-                     vintage: wineInfo.vintage || undefined,
-                     producer: wineInfo.producer || undefined,
-                     region: wineInfo.region || undefined,
-                     varietal: wineInfo.varietal || undefined,
-                     imageUrl: detailImageUrl || undefined, // Use the fetched one if available
-                     score: ratingInfo.score,
-                     ratingSource: ratingInfo.source,
-                     summary: aiSummary,
-                     additionalReviews: reviews.map(reviewString => ({
-                         source: 'Review Snippet', // Source URL isn't available here with current getWineReviews
-                         review: reviewString
-                     }))
-                 };
-             } catch (wineError: any) {
-                console.error(`[${triggerRequestId}] [${jobId}] Error processing wine ${wineInfo.name}:`, wineError);
-                // Return partial data with error, including default score/source
-                 return {
-                     name: wineInfo.name || 'Unknown Wine',
-                     vintage: wineInfo.vintage || undefined,
-                     producer: wineInfo.producer || undefined,
-                     score: 0, // Add default score
-                     ratingSource: 'Processing Error', // Add default source
-                     error: `Failed to process complete data: ${wineError.message}`
-                 };
-            }
-        });
-
-        const processedWines = await Promise.all(processedWinesPromises);
-
-        // Step 3: Store results in KV
-        const finalResult = {
+        // --- 5. Store Results ---
+        const result = {
             status: 'completed',
             wines: processedWines,
-            imageUrl, // Include original image URL
+            imageUrl,
             completionTimestamp: Date.now(),
-            durationMs: Date.now() - analysisStartTime
+            durationMs: Date.now() - startTime
         };
-        console.log(`[${triggerRequestId}] [${jobId}] Attempting to store final result in KV:`, JSON.stringify(finalResult, null, 2));
-        try {
-            await kv.set(jobId, finalResult, { ex: 3600 }); // Store for 1 hour
-            console.log(`[${triggerRequestId}] [${jobId}] Successfully stored final result in KV`);
-            
-            // Verify the data was stored
-            const storedData = await kv.get(jobId);
-            console.log(`[${triggerRequestId}] [${jobId}] Verified KV data after storage:`, JSON.stringify(storedData, null, 2));
-        } catch (kvError) {
-            console.error(`[${triggerRequestId}] [${jobId}] Error storing final result in KV:`, kvError);
-            throw kvError; // Re-throw to be caught by outer try-catch
-        }
-        console.log(`[${triggerRequestId}] [${jobId}] Analysis complete. Results stored in KV.`);
 
+        console.log(`[${requestId}] [${jobId}] Storing results in KV...`);
+        try {
+            await kv.set(jobId, result, { ex: 3600 });
+            console.log(`[${requestId}] [${jobId}] Successfully stored final result in KV`);
+            
+            // Verify the data was stored correctly
+            const storedData = await kv.get(jobId);
+            console.log(`[${requestId}] [${jobId}] Verified KV data after storage:`, JSON.stringify(storedData, null, 2));
+        } catch (kvError) {
+            console.error(`[${requestId}] [${jobId}] Error storing results in KV:`, kvError);
+            throw kvError;
+        }
+
+        console.log(`[${requestId}] [${jobId}] Analysis complete. Results stored in KV.`);
         return {
             statusCode: 200,
-            body: JSON.stringify({ message: "Processing complete", jobId: jobId }),
+            body: JSON.stringify({ success: true, jobId })
         };
 
     } catch (error: any) {
-        console.error(`[Job ID: ${jobId || 'N/A'}] Error in Netlify background function:`, error);
-        // Attempt to update KV status to failed
-        if (jobId && process.env.KV_URL) { // Check KV creds again before trying to set
-            try {
-                 await kv.set(jobId, {
-                     status: 'failed',
-                     error: error.message || 'Unknown error during background processing',
-                     completionTimestamp: Date.now(),
-                     durationMs: Date.now() - analysisStartTime
-                 }, { ex: 3600 });
-            } catch (kvError) {
-                 console.error(`[Job ID: ${jobId}] Failed to update KV status to failed:`, kvError);
-            }
+        console.error(`[${requestId}] [${jobId}] Error in Netlify function:`, error);
+        
+        // Update KV with error status
+        try {
+            await kv.set(jobId, {
+                status: 'failed',
+                error: error.message || 'Unknown error during processing',
+                imageUrl,
+                errorTimestamp: Date.now()
+            }, { ex: 3600 });
+            console.log(`[${requestId}] [${jobId}] Updated KV with error status`);
+        } catch (kvError) {
+            console.error(`[${requestId}] [${jobId}] Error updating KV with error status:`, kvError);
         }
-        // Even if KV update fails, return 500
+
         return {
             statusCode: 500,
-            body: JSON.stringify({ message: "Internal Server Error during background processing", error: error.message }),
+            body: JSON.stringify({ 
+                error: 'Failed to process wine analysis',
+                details: error.message,
+                jobId
+            })
         };
     }
 };
-
-export { handler };
