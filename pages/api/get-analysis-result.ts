@@ -63,6 +63,13 @@ export default async function handler(
     console.log(`Job ID ${jobId} status: ${result.status}`);
     console.log(`Job ID ${jobId} full data:`, JSON.stringify(result, null, 2));
 
+    // Double-check the status
+    if (result.status === 'completed') {
+      console.log(`Job ID ${jobId} is completed, returning completed status`);
+    } else {
+      console.log(`Job ID ${jobId} is not completed, current status: ${result.status}`);
+    }
+
     // Return the status and the rest of the data
     const { status, ...data } = result;
     return res.status(200).json({ status, data });
