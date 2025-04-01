@@ -34,51 +34,47 @@ export default async function handler(
     return res.status(400).json({ status: 'not_found', message: 'Missing or invalid jobId parameter' });
   }
 
-  console.log(`Checking status for Job ID: ${jobId}`);
-
   try {
-    // Verify KV connection first
+    console.log(`[${jobId}] Attempting to fetch job data from KV...`);
+    
+    // Verify KV connection
     try {
-      console.log("Verifying KV connection...");
       await kv.ping();
-      console.log("KV connection successful");
-    } catch (kvError) {
-      console.error("KV connection failed:", kvError);
-      return res.status(500).json({ 
-        status: 'not_found',
-        message: 'KV connection failed'
-      });
+      console.log(`[${jobId}] KV connection successful`);
+    } catch (error) {
+      console.error(`[${jobId}] KV connection failed:`, error);
+      return res.status(500).json({ status: 'not_found', message: 'Failed to connect to KV store' });
     }
 
-    // Fetch the job data from Vercel KV
-    console.log(`Attempting to fetch job data from KV for Job ID: ${jobId}`);
-    const result = await kv.get<JobResult>(jobId);
-    console.log(`Raw KV result for Job ID ${jobId}:`, JSON.stringify(result, null, 2));
+    // Fetch job data
+    const jobData = await kv.get(jobId);
+    console.log(`[${jobId}] Raw KV data:`, JSON.stringify(jobData, null, 2));
 
-    if (!result) {
-      console.log(`Job ID not found: ${jobId}`);
-      return res.status(404).json({ status: 'not_found', message: `Job ID ${jobId} not found.` });
+    if (!jobData) {
+      console.log(`[${jobId}] No job data found in KV`);
+      return res.status(404).json({ status: 'not_found', message: 'Job not found' });
     }
 
-    console.log(`Job ID ${jobId} status: ${result.status}`);
-    console.log(`Job ID ${jobId} full data:`, JSON.stringify(result, null, 2));
+    // Parse the job data
+    const parsedData = typeof jobData === 'string' ? JSON.parse(jobData) : jobData;
+    console.log(`[${jobId}] Parsed job data:`, JSON.stringify(parsedData, null, 2));
 
-    // Double-check the status
-    if (result.status === 'completed') {
-      console.log(`Job ID ${jobId} is completed, returning completed status`);
+    // Check job status
+    const status = parsedData.status;
+    console.log(`[${jobId}] Current job status:`, status);
+
+    if (status === 'completed') {
+      console.log(`[${jobId}] Job completed, returning results`);
+      return res.status(200).json(parsedData);
+    } else if (status === 'failed') {
+      console.log(`[${jobId}] Job failed, returning error`);
+      return res.status(500).json({ status: 'failed', message: 'Analysis failed', details: parsedData.error });
     } else {
-      console.log(`Job ID ${jobId} is not completed, current status: ${result.status}`);
+      console.log(`[${jobId}] Job still processing, current status:`, status);
+      return res.status(202).json({ status: 'processing' });
     }
-
-    // Return the status and the rest of the data
-    const { status, ...data } = result;
-    return res.status(200).json({ status, data });
-
-  } catch (error: any) {
-    console.error(`Error fetching status for Job ID ${jobId}:`, error);
-    return res.status(500).json({ 
-        status: 'not_found', // Or maybe a different status like 'error'?
-        message: 'Error fetching job status.'
-    });
+  } catch (error) {
+    console.error(`[${jobId}] Error fetching job status:`, error);
+    return res.status(500).json({ status: 'not_found', message: 'Failed to fetch job status' });
   }
 } 
