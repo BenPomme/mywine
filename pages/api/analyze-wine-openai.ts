@@ -145,7 +145,19 @@ export default async function handler(
 // Helper function to parse the unstructured text from OpenAI into structured data
 function parseWineDetails(analysisText: string): any {
   // Create a default structure
-  const wineData = {
+  const wineData: {
+    name: string;
+    producer: string;
+    vintage: string;
+    region: string;
+    varietal: string;
+    type: string;
+    score: number;
+    summary: string;
+    imageUrl: string;
+    ratingSource: string;
+    additionalReviews: Array<{source: string, review: string}>;
+  } = {
     name: '',
     producer: '',
     vintage: '',
