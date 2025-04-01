@@ -373,7 +373,18 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
             completionTimestamp: Date.now(),
             durationMs: Date.now() - analysisStartTime
         };
-        await kv.set(jobId, finalResult, { ex: 3600 }); // Store for 1 hour
+        console.log(`[${triggerRequestId}] [${jobId}] Attempting to store final result in KV:`, JSON.stringify(finalResult, null, 2));
+        try {
+            await kv.set(jobId, finalResult, { ex: 3600 }); // Store for 1 hour
+            console.log(`[${triggerRequestId}] [${jobId}] Successfully stored final result in KV`);
+            
+            // Verify the data was stored
+            const storedData = await kv.get(jobId);
+            console.log(`[${triggerRequestId}] [${jobId}] Verified KV data after storage:`, JSON.stringify(storedData, null, 2));
+        } catch (kvError) {
+            console.error(`[${triggerRequestId}] [${jobId}] Error storing final result in KV:`, kvError);
+            throw kvError; // Re-throw to be caught by outer try-catch
+        }
         console.log(`[${triggerRequestId}] [${jobId}] Analysis complete. Results stored in KV.`);
 
         return {

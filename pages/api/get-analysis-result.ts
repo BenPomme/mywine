@@ -38,7 +38,9 @@ export default async function handler(
 
   try {
     // Fetch the job data from Vercel KV
+    console.log(`Attempting to fetch job data from KV for Job ID: ${jobId}`);
     const result = await kv.get<JobResult>(jobId);
+    console.log(`Raw KV result for Job ID ${jobId}:`, JSON.stringify(result, null, 2));
 
     if (!result) {
       console.log(`Job ID not found: ${jobId}`);
@@ -46,6 +48,7 @@ export default async function handler(
     }
 
     console.log(`Job ID ${jobId} status: ${result.status}`);
+    console.log(`Job ID ${jobId} full data:`, JSON.stringify(result, null, 2));
 
     // Return the status and the rest of the data
     const { status, ...data } = result;
