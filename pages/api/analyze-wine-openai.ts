@@ -102,7 +102,7 @@ export default async function handler(
     });
 
     // Process OpenAI response
-    const wineAnalysis = completion.choices[0].message.content;
+    const wineAnalysis = completion.choices[0].message.content || '';
     console.log(`[${requestId}] [${jobId}] OpenAI analysis complete`);
 
     // Parse the analysis into structured data
