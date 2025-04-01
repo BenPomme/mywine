@@ -94,7 +94,7 @@ export default async function handler(
       });
     }
 
-    // Type assertion for jobData
+    // Type assertion for jobData - only keep one of these lines
     const job = jobData as unknown as JobResult;
     console.log(`[${requestId}] Job status:`, job.status);
     console.log(`[${requestId}] Job details:`, JSON.stringify(job, null, 2));
