@@ -144,7 +144,7 @@ export default function Home() {
   }, [jobId, pollingStatus]); // Rerun effect if jobId or pollingStatus changes
 
 
-  const handleImageUpload = async (base64Image: string) => {
+  const handleImageUpload = async (file: File) => {
     try {
       setUploadState({ isLoading: true, error: null });
       setWineDataList([]); // Clear previous results
@@ -155,9 +155,18 @@ export default function Home() {
          pollingIntervalRef.current = null;
       }
       
-      console.log("Submitting image analysis request...");
-      
-      // Call the *trigger* API
+      // Convert image to base64
+      const base64Image = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const base64 = e.target?.result as string;
+          resolve(base64);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      // Submit image analysis request
+      console.log('Submitting image analysis request...');
       const response = await fetch('/api/analyze-wine', {
         method: 'POST',
         headers: {
@@ -165,69 +174,119 @@ export default function Home() {
         },
         body: JSON.stringify({ image: base64Image }),
       });
-      
-      // Handle 504 Gateway Timeout specifically
-      if (response.status === 504) {
-        console.log("Received 504 timeout, but continuing with polling...");
-        // Try to get the jobId from the response headers
-        const jobId = response.headers.get('x-job-id');
-        if (jobId) {
-          console.log(`Analysis job started with ID: ${jobId}`);
-          setJobId(jobId);
-          setPollingStatus('polling');
-          return; // Exit early but keep polling
-        }
-        // If no jobId in headers, try to get it from the response body
-        try {
-          const data = await response.json();
-          if (data.jobId) {
-            console.log(`Analysis job started with ID: ${data.jobId}`);
-            setJobId(data.jobId);
-            setPollingStatus('polling');
-            return;
-          }
-        } catch (e) {
-          console.log("Could not parse response body after 504");
-        }
-      }
-      
-      // Check for other non-2xx status codes (specifically 202 Accepted)
-      if (!response.ok && response.status !== 202) {
-        const errorText = await response.text();
-        console.error(`Trigger API error (${response.status}):`, errorText);
-        let errorMessage = `Server responded with ${response.status}`;
-        try {
-            const errorJson = JSON.parse(errorText);
-            errorMessage = errorJson.message || errorMessage;
-        } catch {}
-        throw new Error(errorMessage);
-      }
-      
-      const data = await response.json();
-      console.log('Trigger API response:', data);
 
-      if (data.status === 'processing' && data.jobId) {
-          console.log(`Analysis job started with ID: ${data.jobId}`);
-          setJobId(data.jobId);
-          setPollingStatus('polling'); // Start polling
-          // isLoading is already true
-      } else {
-          // Handle unexpected response from trigger API
-          throw new Error(data.message || 'Failed to start analysis job properly.');
-      }
-      
-      // No longer setting wineDataList here
-      // No longer setting isLoading to false here, polling handles it
+      // Get jobId from response headers or body
+      const jobId = response.headers.get('x-job-id') || (await response.json()).jobId;
+      console.log('Received Job ID:', jobId);
 
-    } catch (error) {
+      if (!jobId) {
+        throw new Error('No job ID received from server');
+      }
+
+      // Start polling for results
+      setJobId(jobId);
+      setPollingStatus('polling');
+      startPolling(jobId);
+
+    } catch (error: any) {
       console.error('Error submitting analysis request:', error);
-      setPollingStatus('failed'); // Set status to failed on submission error
-      setJobId(null); // Clear job ID
-      setUploadState({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to submit analysis request' 
-      });
+      setPollingStatus('failed');
+      setUploadState({ isLoading: false, error: error.message || 'Failed to analyze image' });
+      setJobId(null);
     }
+  };
+
+  const startPolling = (jobId: string) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        console.log(`Checking status for Job ID: ${jobId}`);
+        const response = await fetch(`/api/get-analysis-result?jobId=${jobId}`);
+        const data = await response.json();
+        console.log(`Job ID ${jobId} status:`, data.status);
+
+        if (data.status === 'completed') {
+          clearInterval(pollInterval);
+          setPollingStatus('completed');
+          setUploadState({ isLoading: false, error: null });
+          setJobId(null);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          // Format and set results
+          if (data.data?.wines && Array.isArray(data.data.wines)) {
+            // *** Reuse the formatting logic from handleImageUpload ***
+             // Find the original uploaded image URL if stored, or use placeholder
+            const uploadedImageUrl = data.data.imageUrl || 'data:image/svg+xml;base64,...'; // Maybe get from KV if needed?
+
+            const formattedWines = data.data.wines.map((wineData: any) => {
+                // NOTE: Ensure this mapping matches the structure returned by the Netlify function
+                 return {
+                    name: wineData.name || '',
+                    winery: wineData.producer || wineData.winery || '',
+                    year: wineData.vintage || wineData.year || '',
+                    region: wineData.region || '',
+                    grapeVariety: wineData.varietal || wineData.grapeVariety || '',
+                    type: wineData.type || '',
+                    imageUrl: wineData.imageUrl || '', // This might be the detail image now
+                    uploadedImageUrl: uploadedImageUrl, // Need the originally uploaded one
+                    score: wineData.score || 0,
+                    summary: wineData.summary || '',
+                    aiSummary: wineData.summary || '', // Keep consistent for display
+                    rating: {
+                      score: wineData.score || 0,
+                      source: wineData.ratingSource || 'AI Analysis',
+                      review: '' // Keep this empty
+                    },
+                    additionalReviews: Array.isArray(wineData.additionalReviews) 
+                      ? wineData.additionalReviews.map((review: any) => {
+                          if (typeof review === 'string') { // Should be object now based on Netlify func
+                            return { source: 'Review Snippet', review: review }; 
+                          }
+                          return { source: review.source || 'Review Snippet', review: review.review || '' }; // Use source/review fields
+                        })
+                      : []
+                  };
+            });
+            setWineDataList(formattedWines);
+          } else {
+             throw new Error('Completed job missing wine data');
+          }
+
+        } else if (data.status === 'failed' || data.status === 'trigger_failed') {
+          console.error("Job failed:", data.error);
+          setPollingStatus('failed');
+          setUploadState({ isLoading: false, error: data.error || 'Analysis failed.' });
+          setJobId(null);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+        } else if (data.status === 'not_found') {
+           console.error("Job ID not found during polling.");
+           setPollingStatus('failed');
+           setUploadState({ isLoading: false, error: 'Analysis job lost or expired.' });
+           setJobId(null);
+           if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+        } else {
+          // Still processing ('uploading', 'processing', 'processing_started')
+          console.log(`Job status: ${data.status}, continuing poll...`);
+          setPollingStatus('polling'); // Ensure status reflects polling
+          setUploadState({ isLoading: true, error: null }); // Keep loading true
+        }
+
+      } catch (error) {
+        console.error('Error polling for results:', error);
+        // Don't stop polling on error, let it continue
+      }
+    }, 2000); // Poll every 2 seconds
+
+    // Store interval ID for cleanup
+    pollingIntervalRef.current = pollInterval;
   };
 
   // --- UI Rendering --- 
