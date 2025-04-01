@@ -129,20 +129,42 @@ export default async function handler(
     // --- 3. Trigger Netlify Background Function --- 
     console.log(`[${requestId}] [${jobId}] Triggering Netlify Background Function at ${NETLIFY_BACKGROUND_FUNCTION_URL}...`);
     try {
-        // Send jobId and the public URL of the image
-        await axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, {
+        // Prepare request body
+        const requestBody = {
             jobId: jobId,
             imageUrl: blobResult.url,
-            requestId: requestId // Pass request ID for tracing
+            requestId: requestId
+        };
+        console.log(`[${requestId}] [${jobId}] Request body:`, JSON.stringify(requestBody, null, 2));
+
+        // Send jobId and the public URL of the image
+        const netlifyResponse = await axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, requestBody, {
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
-        console.log(`[${requestId}] [${jobId}] Netlify function triggered successfully.`);
+        console.log(`[${requestId}] [${jobId}] Netlify function response:`, {
+            status: netlifyResponse.status,
+            data: netlifyResponse.data,
+            headers: netlifyResponse.headers
+        });
     } catch (triggerError: any) {
-        console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, triggerError.message);
+        console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, {
+            message: triggerError.message,
+            response: triggerError.response?.data,
+            status: triggerError.response?.status,
+            requestBody: {
+                jobId,
+                imageUrl: blobResult.url,
+                requestId
+            }
+        });
         // Decide how to handle trigger failure. Maybe update KV status to 'trigger_failed'?
         await kv.set(jobId, { 
           status: 'trigger_failed', 
           error: 'Failed to trigger background processing',
-          imageUrl: blobResult.url // Store URL even if trigger failed
+          imageUrl: blobResult.url, // Store URL even if trigger failed
+          errorDetails: triggerError.response?.data || triggerError.message
         }, { ex: 3600 });
         // Return failure to the client
         return res.status(500).json({ 

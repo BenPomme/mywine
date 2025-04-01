@@ -271,12 +271,24 @@ export const handler = async (event: any) => {
     const imageUrl = event.body?.imageUrl;
 
     console.log(`[${requestId}] [${jobId}] Netlify function started`);
+    console.log(`[${requestId}] [${jobId}] Event body:`, JSON.stringify(event.body, null, 2));
 
     if (!jobId || !imageUrl) {
-        console.error(`[${requestId}] [${jobId}] Missing required parameters:`, { jobId, imageUrl });
+        console.error(`[${requestId}] [${jobId}] Missing required parameters:`, { 
+            jobId, 
+            imageUrl,
+            body: event.body 
+        });
         return {
             statusCode: 400,
-            body: JSON.stringify({ error: 'Missing required parameters' })
+            body: JSON.stringify({ 
+                error: 'Missing required parameters',
+                received: {
+                    jobId,
+                    imageUrl,
+                    requestId
+                }
+            })
         };
     }
 
