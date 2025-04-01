@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { kv } from '@vercel/kv';
+import { v4 as uuidv4 } from 'uuid';
 
 // Define the expected structure of the data stored in KV
 interface JobResult {
@@ -25,69 +26,71 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<StatusApiResponse>
 ) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ status: 'not_found', message: 'Method Not Allowed' });
-  }
-
   const { jobId } = req.query;
+  const requestId = uuidv4();
 
   if (!jobId || typeof jobId !== 'string') {
-    return res.status(400).json({ status: 'not_found', message: 'Missing or invalid jobId parameter' });
+    console.error(`[${requestId}] Missing or invalid jobId in query parameters`);
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Missing or invalid jobId parameter',
+      status: 'error',
+      details: 'No jobId provided in query parameters'
+    });
   }
 
   try {
-    console.log(`[${jobId}] Attempting to fetch job data from KV...`);
+    console.log(`[${requestId}] Checking status for Job ID: ${jobId}`);
     
     // Verify KV connection
     try {
       await kv.ping();
-      console.log(`[${jobId}] KV connection successful`);
+      console.log(`[${requestId}] KV connection successful`);
     } catch (error) {
-      console.error(`[${jobId}] KV connection failed:`, error);
+      console.error(`[${requestId}] KV connection failed:`, error);
       return res.status(500).json({ 
-        status: 'not_found', 
+        success: false, 
         message: 'Failed to connect to KV store',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        status: 'error',
+        details: 'KV connection error'
       });
     }
 
-    // Fetch job data
+    // Fetch job data from KV
     const jobData = await kv.get(jobId);
-    console.log(`[${jobId}] Raw KV data:`, JSON.stringify(jobData, null, 2));
+    console.log(`[${requestId}] Raw KV data for job ${jobId}:`, JSON.stringify(jobData, null, 2));
 
     if (!jobData) {
-      console.log(`[${jobId}] No job data found in KV`);
-      return res.status(404).json({ status: 'not_found', message: 'Job not found' });
-    }
-
-    // Parse the job data
-    const parsedData = typeof jobData === 'string' ? JSON.parse(jobData) : jobData;
-    console.log(`[${jobId}] Parsed job data:`, JSON.stringify(parsedData, null, 2));
-
-    // Check job status
-    const status = parsedData.status;
-    console.log(`[${jobId}] Current job status:`, status);
-
-    if (status === 'completed') {
-      console.log(`[${jobId}] Job completed, returning results`);
-      return res.status(200).json(parsedData);
-    } else if (status === 'failed') {
-      console.log(`[${jobId}] Job failed, returning error`);
-      return res.status(500).json({ 
-        status: 'failed', 
-        message: 'Analysis failed', 
-        details: parsedData.error 
+      console.error(`[${requestId}] No data found for job ${jobId}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Job not found',
+        status: 'not_found',
+        details: 'No data found in KV store'
       });
-    } else {
-      console.log(`[${jobId}] Job still processing, current status:`, status);
-      return res.status(202).json({ status: 'processing' });
     }
-  } catch (error) {
-    console.error(`[${jobId}] Error fetching job status:`, error);
+
+    // Type assertion for jobData
+    const job = jobData as JobStatus;
+    console.log(`[${requestId}] Job status:`, job.status);
+    console.log(`[${requestId}] Job details:`, JSON.stringify(job, null, 2));
+
+    // Return the current status and any available data
+    return res.status(200).json({
+      success: true,
+      status: job.status,
+      data: job.data,
+      error: job.error,
+      details: job.details
+    });
+
+  } catch (error: any) {
+    console.error(`[${requestId}] Error fetching job status:`, error);
     return res.status(500).json({ 
-      status: 'not_found', 
+      success: false, 
       message: 'Failed to fetch job status',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      status: 'error',
+      details: error.message
     });
   }
 } 
