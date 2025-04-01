@@ -34,7 +34,7 @@ export default async function handler(
     return res.status(400).json({ 
       success: false, 
       message: 'Missing or invalid jobId parameter',
-      status: 'error',
+      status: 'not_found',
       details: 'No jobId provided in query parameters'
     });
   }
@@ -51,7 +51,7 @@ export default async function handler(
       return res.status(500).json({ 
         success: false, 
         message: 'Failed to connect to KV store',
-        status: 'error',
+        status: 'failed',
         details: 'KV connection error'
       });
     }
