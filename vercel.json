@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "functions": {
+    "pages/api/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "env": {},
+  "build": {
+    "env": {}
+  }
+} 

@@ -4,22 +4,28 @@ import { v4 as uuidv4 } from 'uuid';
 
 // Define the expected structure of the data stored in KV
 interface JobResult {
-  status: 'uploading' | 'processing' | 'processing_started' | 'completed' | 'failed' | 'trigger_failed';
+  status: 'uploading' | 'processing' | 'completed' | 'failed' | 'trigger_failed';
   error?: string;
   imageUrl?: string;
-  wines?: any[]; // Define a more specific type based on ProcessedWine if possible
-  requestTimestamp?: number;
-  processingTimestamp?: number;
-  completionTimestamp?: number;
-  durationMs?: number;
+  result?: {
+    wines?: any[];
+    status?: string;
+    imageUrl?: string;
+    completedAt?: string;
+  };
+  wines?: any[]; // For backward compatibility
+  updatedAt?: string;
+  createdAt?: string;
+  completedAt?: string;
+  failedAt?: string;
 }
 
 // Define the response type for this API route
 type StatusApiResponse = {
-  success: boolean;  // Add success property
+  success: boolean;
   status: JobResult['status'] | 'not_found';
   message?: string;
-  data?: Omit<JobResult, 'status'>; // Return all data except the status itself
+  data?: any; // Return all data 
   details?: string; // Add details property for error responses
 };
 
@@ -58,7 +64,7 @@ export default async function handler(
     }
 
     // Fetch job data from KV
-    const jobData = await kv.get(jobId);
+    const jobData = await kv.hgetall(`job:${jobId}`);
     console.log(`[${requestId}] Raw KV data for job ${jobId}:`, JSON.stringify(jobData, null, 2));
 
     if (!jobData) {
@@ -76,18 +82,20 @@ export default async function handler(
     console.log(`[${requestId}] Job status:`, job.status);
     console.log(`[${requestId}] Job details:`, JSON.stringify(job, null, 2));
 
+    // Extract wines from either the result object or the direct wines property
+    const wines = job.result?.wines || job.wines || [];
+
     // Return the current status and any available data
     return res.status(200).json({
       success: true,
       status: job.status,
       data: {
         error: job.error,
-        imageUrl: job.imageUrl,
-        wines: job.wines,
-        requestTimestamp: job.requestTimestamp,
-        processingTimestamp: job.processingTimestamp,
-        completionTimestamp: job.completionTimestamp,
-        durationMs: job.durationMs
+        imageUrl: job.imageUrl || job.result?.imageUrl,
+        wines: wines,
+        updatedAt: job.updatedAt,
+        createdAt: job.createdAt,
+        completedAt: job.completedAt || job.result?.completedAt
       }
     });
 
