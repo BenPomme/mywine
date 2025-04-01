@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "functions": {
+    "pages/api/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "env": {},
+  "regions": ["iad1"],
+  "rewrites": [],
+  "headers": [],
+  "crons": []
+} 
