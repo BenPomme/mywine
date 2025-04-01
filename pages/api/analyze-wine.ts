@@ -86,7 +86,9 @@ export default async function handler(
 
   try {
     // --- 1. Initial KV Status --- 
-    await kv.set(jobId, { status: 'uploading', requestTimestamp: Date.now() }, { ex: 3600 }); // Set TTL (e.g., 1 hour)
+    // Fire and forget KV operation
+    kv.set(jobId, { status: 'uploading', requestTimestamp: Date.now() }, { ex: 3600 })
+      .catch(error => console.error(`[${requestId}] [${jobId}] Error setting initial KV status:`, error));
     console.log(`[${requestId}] [${jobId}] Initial status set to 'uploading' in KV`);
 
     // --- 2. Upload Image to Vercel Blob --- 
@@ -106,8 +108,6 @@ export default async function handler(
       // Assuming raw base64 if no data URL prefix
       try {
           const buffer = Buffer.from(image, 'base64');
-          // Attempt to infer type, default to jpg
-          // This is very basic, might need a library for real mime type detection if needed
           imageBlob = new Blob([buffer], { type: 'image/jpeg' }); 
       } catch(e) {
           console.error(`[${requestId}] [${jobId}] Error creating Blob from raw base64:`, e);
@@ -121,8 +121,8 @@ export default async function handler(
     
     const filename = `${jobId}.${fileExtension}`; 
     const blobResult = await put(filename, imageBlob, {
-      access: 'public', // Make it publicly accessible for Netlify function
-      contentType: imageBlob.type, // Set content type
+      access: 'public',
+      contentType: imageBlob.type,
     });
     console.log(`[${requestId}] [${jobId}] Image uploaded to Vercel Blob: ${blobResult.url}`);
 
@@ -142,7 +142,6 @@ export default async function handler(
         headers: {
             'Content-Type': 'application/json'
         },
-        // Ensure axios doesn't stringify the body again
         transformRequest: [(data) => data]
     }).catch((triggerError: any) => {
         console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, {
@@ -165,16 +164,17 @@ export default async function handler(
     });
 
     // --- 4. Update KV Status to Processing --- 
-    await kv.set(jobId, { 
+    // Fire and forget KV operation
+    kv.set(jobId, { 
         status: 'processing', 
         imageUrl: blobResult.url,
         processingTimestamp: Date.now() 
-    }, { ex: 3600 }); 
+    }, { ex: 3600 }).catch(error => 
+        console.error(`[${requestId}] [${jobId}] Error updating KV status to processing:`, error)
+    );
     console.log(`[${requestId}] [${jobId}] Status updated to 'processing' in KV.`);
 
-    // --- 5. Return Success Response --- 
-    // Use 202 Accepted status code to indicate the request was accepted 
-    // but processing is not complete.
+    // --- 5. Return Success Response Immediately --- 
     return res.status(202).json({ 
         success: true, 
         status: 'processing', 
@@ -184,9 +184,12 @@ export default async function handler(
 
   } catch (error: any) {
     console.error(`[${requestId}] [${jobId || 'N/A'}] Error in analysis trigger API:`, error);
-    // Update KV if possible to indicate failure
+    // Fire and forget KV error update
     if (jobId) {
-        await kv.set(jobId, { status: 'failed', error: error.message || 'Unknown error during setup' }, { ex: 3600 });
+        kv.set(jobId, { 
+            status: 'failed', 
+            error: error.message || 'Unknown error during setup' 
+        }, { ex: 3600 }).catch(console.error);
     }
     return res.status(500).json({ 
         success: false, 
