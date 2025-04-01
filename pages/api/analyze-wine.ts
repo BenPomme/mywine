@@ -54,149 +54,135 @@ function dataURLtoBlob(dataurl: string): Blob | null {
   }
 }
 
+type AnalyzeRequestBody = {
+  image: string;
+};
+
+type AnalyzeResponseData = {
+  jobId: string;
+  status: string;
+  requestId?: string;
+  message?: string;
+};
+
+// Create a function to trigger the Netlify function without waiting for its response
+const triggerNetlifyFunctionAsync = (url: string, data: any) => {
+  // Use a fire-and-forget pattern
+  axios.post(url, data)
+    .then(response => {
+      console.log('Netlify function executed successfully:', response.status);
+    })
+    .catch(error => {
+      console.error('Error executing Netlify function:', error.message);
+      // Attempt to update KV store with failure status (best effort)
+      try {
+        kv.hset(`job:${data.jobId}`, {
+          status: 'trigger_failed',
+          error: error.message,
+          updatedAt: new Date().toISOString()
+        }).catch(kvError => {
+          console.error('Failed to update KV store with trigger failure:', kvError);
+        });
+      } catch (e) {
+        console.error('Exception handling Netlify trigger failure:', e);
+      }
+    });
+};
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<TriggerApiResponse> // Updated response type
+  res: NextApiResponse<AnalyzeResponseData>
 ) {
-  // Use a request ID for tracking across services
-  const requestId = uuidv4(); 
+  // Only accept POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ 
+      status: 'error', 
+      message: 'Method not allowed',
+      jobId: ''
+    });
+  }
+
+  // Generate a request ID for logging
+  const requestId = uuidv4();
   console.log(`[${requestId}] Analyze request received`);
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, message: 'Method not allowed', requestId });
-  }
-
-  // --- Simplified Input Validation --- 
-  const { image } = req.body;
-  if (!image) {
-    return res.status(400).json({ success: false, message: 'No image provided', requestId });
-  }
-  // Crude validation, assuming frontend sends raw base64 or data URL
-  // if (!validateBase64Image(image)) {
-  //   return res.status(400).json({ success: false, message: 'Invalid image format or size', requestId });
-  // }
-
-  // --- Generate Job ID --- 
-  const jobId = uuidv4();
-  console.log(`[${requestId}] Generated Job ID: ${jobId}`);
-
-  // Set the jobId in the response headers immediately
-  res.setHeader('x-job-id', jobId);
-
   try {
-    // --- 1. Initial KV Status --- 
-    // Fire and forget KV operation
-    kv.set(jobId, { status: 'uploading', requestTimestamp: Date.now() }, { ex: 3600 })
-      .catch(error => console.error(`[${requestId}] [${jobId}] Error setting initial KV status:`, error));
+    const { image } = req.body as AnalyzeRequestBody;
+
+    if (!image) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'No image provided',
+        jobId: '' 
+      });
+    }
+
+    // Generate a unique job ID
+    const jobId = uuidv4();
+    console.log(`[${requestId}] Generated Job ID: ${jobId}`);
+
+    // Set the job ID in the response headers immediately for client availability
+    res.setHeader('x-job-id', jobId);
+
+    // Create initial job status in KV store
     console.log(`[${requestId}] [${jobId}] Initial status set to 'uploading' in KV`);
+    await kv.hset(`job:${jobId}`, {
+      status: 'uploading',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      requestId
+    });
 
-    // --- 2. Upload Image to Vercel Blob --- 
+    // Upload image to Blob storage
     console.log(`[${requestId}] [${jobId}] Uploading image to Vercel Blob...`);
-    // Ensure we handle both raw base64 and data URLs
-    let imageBlob: Blob | null;
-    let fileExtension = 'jpg'; // Default extension
-    let base64Data = image;
-
-    if (image.startsWith('data:image')) {
-      const mimeMatch = image.match(/^data:image\/([a-zA-Z]+);base64,/);
-      if (mimeMatch && mimeMatch[1]) {
-        fileExtension = mimeMatch[1];
-      }
-      imageBlob = dataURLtoBlob(image);
-    } else {
-      // Assuming raw base64 if no data URL prefix
-      try {
-          const buffer = Buffer.from(image, 'base64');
-          imageBlob = new Blob([buffer], { type: 'image/jpeg' }); 
-      } catch(e) {
-          console.error(`[${requestId}] [${jobId}] Error creating Blob from raw base64:`, e);
-          imageBlob = null;
-      }
-    }
-
-    if (!imageBlob) {
-      throw new Error('Failed to process image data for upload.');
-    }
+    const imageData = image.split(',')[1]; // Remove data URL prefix
+    const buffer = Buffer.from(imageData, 'base64');
     
-    const filename = `${jobId}.${fileExtension}`; 
-    const blobResult = await put(filename, imageBlob, {
+    // Upload the image to Vercel Blob storage
+    const { url } = await put(`${jobId}.jpg`, buffer, {
       access: 'public',
-      contentType: imageBlob.type,
     });
-    console.log(`[${requestId}] [${jobId}] Image uploaded to Vercel Blob: ${blobResult.url}`);
-
-    // --- 3. Trigger Netlify Background Function --- 
-    console.log(`[${requestId}] [${jobId}] Triggering Netlify Background Function at ${NETLIFY_BACKGROUND_FUNCTION_URL}...`);
     
-    // Prepare request body
-    const requestBody = {
-        jobId: jobId,
-        imageUrl: blobResult.url,
-        requestId: requestId
-    };
-    console.log(`[${requestId}] [${jobId}] Request body:`, JSON.stringify(requestBody, null, 2));
+    console.log(`[${requestId}] [${jobId}] Image uploaded to Vercel Blob: ${url}`);
 
-    // Fire and forget - don't await the response
-    axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, requestBody, {
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        transformRequest: [(data) => data]
-    }).catch((triggerError: any) => {
-        console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, {
-            message: triggerError.message,
-            response: triggerError.response?.data,
-            status: triggerError.response?.status,
-            requestBody: {
-                jobId,
-                imageUrl: blobResult.url,
-                requestId
-            }
-        });
-        // Update KV with trigger failure
-        kv.set(jobId, { 
-            status: 'trigger_failed', 
-            error: 'Failed to trigger background processing',
-            imageUrl: blobResult.url,
-            errorDetails: triggerError.response?.data || triggerError.message
-        }, { ex: 3600 }).catch(console.error);
+    // Update KV store with processing status
+    await kv.hset(`job:${jobId}`, {
+      status: 'processing',
+      imageUrl: url,
+      updatedAt: new Date().toISOString(),
+      processingStartedAt: new Date().toISOString()
     });
 
-    // --- 4. Update KV Status to Processing --- 
-    // Fire and forget KV operation
-    kv.set(jobId, { 
-        status: 'processing', 
-        imageUrl: blobResult.url,
-        processingTimestamp: Date.now() 
-    }, { ex: 3600 }).catch(error => 
-        console.error(`[${requestId}] [${jobId}] Error updating KV status to processing:`, error)
-    );
-    console.log(`[${requestId}] [${jobId}] Status updated to 'processing' in KV.`);
+    // Prepare data for the Netlify function
+    const netlifyFunctionData = {
+      jobId,
+      imageUrl: url,
+      requestId
+    };
 
-    // --- 5. Return Success Response Immediately --- 
-    return res.status(202).json({ 
-        success: true, 
-        status: 'processing', 
-        jobId: jobId,
-        requestId 
+    // Get the Netlify function URL from environment variable or use default
+    const netlifyFunctionUrl = process.env.NETLIFY_FUNCTION_URL || 
+      'https://ilovewine.netlify.app/.netlify/functions/process-wine-analysis';
+
+    console.log(`[${requestId}] [${jobId}] Triggering Netlify Background Function at ${netlifyFunctionUrl}...`);
+    
+    // Trigger the Netlify function without waiting for response (fire and forget)
+    triggerNetlifyFunctionAsync(netlifyFunctionUrl, netlifyFunctionData);
+
+    // Return a success response immediately
+    return res.status(202).json({
+      jobId,
+      status: 'processing',
+      requestId,
+      message: 'Analysis job started'
     });
 
   } catch (error: any) {
-    console.error(`[${requestId}] [${jobId || 'N/A'}] Error in analysis trigger API:`, error);
-    // Fire and forget KV error update
-    if (jobId) {
-        kv.set(jobId, { 
-            status: 'failed', 
-            error: error.message || 'Unknown error during setup' 
-        }, { ex: 3600 }).catch(console.error);
-    }
-    return res.status(500).json({ 
-        success: false, 
-        message: 'An internal server error occurred.', 
-        status: 'failed',
-        jobId: jobId || undefined,
-        requestId 
+    console.error(`[${requestId}] Error processing analysis request:`, error);
+    return res.status(500).json({
+      status: 'error',
+      message: error.message || 'Failed to process image',
+      jobId: ''
     });
   }
 }
