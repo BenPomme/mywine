@@ -125,7 +125,7 @@ export default async function handler(
     
     // Call OpenAI Vision API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
+      model: "gpt-4o",
       max_tokens: 1000,
       messages: [
         {
@@ -139,8 +139,7 @@ export default async function handler(
             {
               type: "image_url",
               image_url: {
-                url: url as string,
-                detail: "high"
+                url: url as string
               }
             }
           ]
