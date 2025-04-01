@@ -16,6 +16,7 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<PollingStatus>('idle');
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to hold interval ID
+  const [useOpenAIOnly, setUseOpenAIOnly] = useState<boolean>(false);
 
   // --- Polling Logic --- 
   useEffect(() => {
@@ -157,7 +158,11 @@ export default function Home() {
 
       // Submit image analysis request
       console.log('Submitting image analysis request...');
-      const response = await fetch('/api/analyze-wine', {
+      
+      // Choose which endpoint to use based on the toggle
+      const endpoint = useOpenAIOnly ? '/api/analyze-wine-openai' : '/api/analyze-wine';
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -173,7 +178,18 @@ export default function Home() {
         throw new Error('No job ID received from server');
       }
 
-      // Start polling for results
+      // For OpenAI-only endpoint, we get the results immediately
+      if (useOpenAIOnly) {
+        const data = await response.json();
+        if (data.status === 'completed' && data.data?.wines) {
+          setWineDataList(data.data.wines);
+          setPollingStatus('completed');
+          setUploadState({ isLoading: false, error: null });
+          return;
+        }
+      }
+
+      // Start polling for results (for the original approach)
       setJobId(jobId);
       setPollingStatus('polling');
       startPolling(jobId);
@@ -296,6 +312,22 @@ export default function Home() {
             <p className="text-xl text-gray-600">
               Take a photo of a wine bottle or menu to get instant ratings and reviews
             </p>
+            <div className="mt-4 flex justify-center items-center">
+              <label className="flex items-center cursor-pointer">
+                <span className="mr-2 text-gray-700">Standard Mode</span>
+                <div className="relative">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only" 
+                    checked={useOpenAIOnly}
+                    onChange={() => setUseOpenAIOnly(!useOpenAIOnly)} 
+                  />
+                  <div className={`block w-14 h-8 rounded-full ${useOpenAIOnly ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <div className={`absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${useOpenAIOnly ? 'transform translate-x-6' : ''}`}></div>
+                </div>
+                <span className="ml-2 text-gray-700">OpenAI Only Mode</span>
+              </label>
+            </div>
           </header>
           
           <div className="max-w-4xl mx-auto">
