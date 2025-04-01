@@ -18,6 +18,7 @@ type StatusApiResponse = {
   status: JobResult['status'] | 'not_found';
   message?: string;
   data?: Omit<JobResult, 'status'>; // Return all data except the status itself
+  details?: string; // Add details property for error responses
 };
 
 export default async function handler(
@@ -68,13 +69,21 @@ export default async function handler(
       return res.status(200).json(parsedData);
     } else if (status === 'failed') {
       console.log(`[${jobId}] Job failed, returning error`);
-      return res.status(500).json({ status: 'failed', message: 'Analysis failed', details: parsedData.error });
+      return res.status(500).json({ 
+        status: 'failed', 
+        message: 'Analysis failed', 
+        details: parsedData.error 
+      });
     } else {
       console.log(`[${jobId}] Job still processing, current status:`, status);
       return res.status(202).json({ status: 'processing' });
     }
   } catch (error) {
     console.error(`[${jobId}] Error fetching job status:`, error);
-    return res.status(500).json({ status: 'not_found', message: 'Failed to fetch job status' });
+    return res.status(500).json({ 
+      status: 'not_found', 
+      message: 'Failed to fetch job status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 } 
