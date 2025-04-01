@@ -141,7 +141,9 @@ export default async function handler(
         const netlifyResponse = await axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, requestBody, {
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            // Ensure axios doesn't stringify the body again
+            transformRequest: [(data) => data]
         });
         console.log(`[${requestId}] [${jobId}] Netlify function response:`, {
             status: netlifyResponse.status,

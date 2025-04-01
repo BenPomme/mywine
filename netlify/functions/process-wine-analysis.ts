@@ -266,18 +266,21 @@ async function initializeKV() {
 
 // --- 2. Main Handler ---
 export const handler = async (event: any) => {
-    const requestId = event.body?.requestId || uuidv4();
-    const jobId = event.body?.jobId;
-    const imageUrl = event.body?.imageUrl;
+    // Parse the request body if it's a string
+    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+    
+    const requestId = body?.requestId || uuidv4();
+    const jobId = body?.jobId;
+    const imageUrl = body?.imageUrl;
 
     console.log(`[${requestId}] [${jobId}] Netlify function started`);
-    console.log(`[${requestId}] [${jobId}] Event body:`, JSON.stringify(event.body, null, 2));
+    console.log(`[${requestId}] [${jobId}] Event body:`, JSON.stringify(body, null, 2));
 
     if (!jobId || !imageUrl) {
         console.error(`[${requestId}] [${jobId}] Missing required parameters:`, { 
             jobId, 
             imageUrl,
-            body: event.body 
+            body 
         });
         return {
             statusCode: 400,
