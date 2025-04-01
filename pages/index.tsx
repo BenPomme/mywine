@@ -144,7 +144,7 @@ export default function Home() {
   }, [jobId, pollingStatus]); // Rerun effect if jobId or pollingStatus changes
 
 
-  const handleImageUpload = async (file: File) => {
+  const handleImageUpload = async (base64Image: string) => {
     try {
       setUploadState({ isLoading: true, error: null });
       setWineDataList([]); // Clear previous results
@@ -154,16 +154,6 @@ export default function Home() {
          clearInterval(pollingIntervalRef.current);
          pollingIntervalRef.current = null;
       }
-      
-      // Convert image to base64
-      const base64Image = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const base64 = e.target?.result as string;
-          resolve(base64);
-        };
-        reader.readAsDataURL(file);
-      });
 
       // Submit image analysis request
       console.log('Submitting image analysis request...');
