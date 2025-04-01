@@ -91,4 +91,6 @@ The application uses Next.js API routes to securely handle external API calls:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+Last deployment trigger: [Current timestamp] 
