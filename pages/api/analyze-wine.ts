@@ -128,29 +128,23 @@ export default async function handler(
 
     // --- 3. Trigger Netlify Background Function --- 
     console.log(`[${requestId}] [${jobId}] Triggering Netlify Background Function at ${NETLIFY_BACKGROUND_FUNCTION_URL}...`);
-    try {
-        // Prepare request body
-        const requestBody = {
-            jobId: jobId,
-            imageUrl: blobResult.url,
-            requestId: requestId
-        };
-        console.log(`[${requestId}] [${jobId}] Request body:`, JSON.stringify(requestBody, null, 2));
+    
+    // Prepare request body
+    const requestBody = {
+        jobId: jobId,
+        imageUrl: blobResult.url,
+        requestId: requestId
+    };
+    console.log(`[${requestId}] [${jobId}] Request body:`, JSON.stringify(requestBody, null, 2));
 
-        // Send jobId and the public URL of the image
-        const netlifyResponse = await axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, requestBody, {
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            // Ensure axios doesn't stringify the body again
-            transformRequest: [(data) => data]
-        });
-        console.log(`[${requestId}] [${jobId}] Netlify function response:`, {
-            status: netlifyResponse.status,
-            data: netlifyResponse.data,
-            headers: netlifyResponse.headers
-        });
-    } catch (triggerError: any) {
+    // Fire and forget - don't await the response
+    axios.post(NETLIFY_BACKGROUND_FUNCTION_URL, requestBody, {
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        // Ensure axios doesn't stringify the body again
+        transformRequest: [(data) => data]
+    }).catch((triggerError: any) => {
         console.error(`[${requestId}] [${jobId}] Error triggering Netlify function:`, {
             message: triggerError.message,
             response: triggerError.response?.data,
@@ -161,27 +155,19 @@ export default async function handler(
                 requestId
             }
         });
-        // Decide how to handle trigger failure. Maybe update KV status to 'trigger_failed'?
-        await kv.set(jobId, { 
-          status: 'trigger_failed', 
-          error: 'Failed to trigger background processing',
-          imageUrl: blobResult.url, // Store URL even if trigger failed
-          errorDetails: triggerError.response?.data || triggerError.message
-        }, { ex: 3600 });
-        // Return failure to the client
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Failed to start background analysis job.',
-            status: 'failed',
-            jobId: jobId,
-            requestId
-        });
-    }
+        // Update KV with trigger failure
+        kv.set(jobId, { 
+            status: 'trigger_failed', 
+            error: 'Failed to trigger background processing',
+            imageUrl: blobResult.url,
+            errorDetails: triggerError.response?.data || triggerError.message
+        }, { ex: 3600 }).catch(console.error);
+    });
 
     // --- 4. Update KV Status to Processing --- 
     await kv.set(jobId, { 
         status: 'processing', 
-        imageUrl: blobResult.url, // Store the image URL with the status
+        imageUrl: blobResult.url,
         processingTimestamp: Date.now() 
     }, { ex: 3600 }); 
     console.log(`[${requestId}] [${jobId}] Status updated to 'processing' in KV.`);
