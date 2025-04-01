@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "npm install openai@4.90.0 --save"
   },
   "dependencies": {
     "@vercel/blob": "^0.27.3",
