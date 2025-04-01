@@ -93,4 +93,5 @@ The application uses Next.js API routes to securely handle external API calls:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-Last deployment trigger: [Updated timestamp to trigger deployment] 
+---
+Last deployment trigger: [Updated timestamp to trigger deployment - April 1, 2025] 
