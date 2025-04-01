@@ -44,7 +44,11 @@ export default async function handler(
       console.log(`[${jobId}] KV connection successful`);
     } catch (error) {
       console.error(`[${jobId}] KV connection failed:`, error);
-      return res.status(500).json({ status: 'not_found', message: 'Failed to connect to KV store' });
+      return res.status(500).json({ 
+        status: 'not_found', 
+        message: 'Failed to connect to KV store',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
 
     // Fetch job data
