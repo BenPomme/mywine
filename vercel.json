@@ -9,5 +9,12 @@
   "regions": ["iad1"],
   "rewrites": [],
   "headers": [],
-  "crons": []
+  "crons": [],
+  "git": {
+    "deploymentEnabled": {
+      "vercel-production": true,
+      "preview/openai-only": true,
+      "main": false
+    }
+  }
 } 
