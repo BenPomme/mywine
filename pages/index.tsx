@@ -170,8 +170,13 @@ export default function Home() {
         body: JSON.stringify({ image: base64Image }),
       });
 
-      // Get jobId from response headers or body
-      const jobId = response.headers.get('x-job-id') || (await response.json()).jobId;
+      // Read the job ID from headers first
+      const headerJobId = response.headers.get('x-job-id');
+      
+      // Then read the response body only once and store it
+      const responseData = await response.json();
+      const jobId = headerJobId || responseData.jobId;
+      
       console.log('Received Job ID:', jobId);
 
       if (!jobId) {
@@ -180,9 +185,36 @@ export default function Home() {
 
       // For OpenAI-only endpoint, we get the results immediately
       if (useOpenAIOnly) {
-        const data = await response.json();
-        if (data.status === 'completed' && data.data?.wines) {
-          setWineDataList(data.data.wines);
+        if (responseData.status === 'completed' && responseData.data?.wines) {
+          // Format wine data for display
+          const wines = responseData.data.wines.map((wineData: any) => ({
+            name: wineData.name || '',
+            winery: wineData.producer || wineData.winery || '',
+            year: wineData.vintage || wineData.year || '',
+            region: wineData.region || '',
+            grapeVariety: wineData.varietal || wineData.grapeVariety || '',
+            type: wineData.type || '',
+            imageUrl: wineData.imageUrl || '',
+            uploadedImageUrl: responseData.data.imageUrl || '',
+            score: wineData.score || 0,
+            summary: wineData.summary || '',
+            aiSummary: wineData.summary || '',
+            rating: {
+              score: wineData.score || 0,
+              source: wineData.ratingSource || 'AI Analysis',
+              review: ''
+            },
+            additionalReviews: Array.isArray(wineData.additionalReviews) 
+              ? wineData.additionalReviews.map((review: any) => {
+                  if (typeof review === 'string') {
+                    return { source: 'Review Snippet', review: review }; 
+                  }
+                  return { source: review.source || 'Review Snippet', review: review.review || '' };
+                })
+              : []
+          }));
+          
+          setWineDataList(wines);
           setPollingStatus('completed');
           setUploadState({ isLoading: false, error: null });
           return;

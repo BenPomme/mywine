@@ -75,6 +75,10 @@ export default async function handler(
   const requestId = uuidv4();
   console.log(`[${requestId}] OpenAI-only analyze request received`);
 
+  // Generate a unique job ID at the beginning
+  const jobId = uuidv4();
+  console.log(`[${requestId}] Generated Job ID: ${jobId}`);
+
   try {
     const { image } = req.body as AnalyzeRequestBody;
 
@@ -82,13 +86,12 @@ export default async function handler(
       return res.status(400).json({ 
         status: 'error', 
         message: 'No image provided',
-        jobId: '' 
+        jobId // Return the jobId even in error cases
       });
     }
 
-    // Generate a unique job ID
-    const jobId = uuidv4();
-    console.log(`[${requestId}] Generated Job ID: ${jobId}`);
+    // Make sure we set job ID in headers for client accessibility
+    res.setHeader('x-job-id', jobId);
 
     // Validate and extract the base64 image data
     const imageData = validateAndExtractImageData(image);
@@ -150,10 +153,12 @@ export default async function handler(
     // Process OpenAI response with proper null checking
     const wineAnalysis = completion.choices[0]?.message?.content || '';
     console.log(`[${requestId}] [${jobId}] OpenAI analysis complete`);
+    console.log(`[${requestId}] [${jobId}] OpenAI response received: "${wineAnalysis.substring(0, 100)}..."`);
 
     // Parse the analysis into structured data
     // This is a simplified parsing logic - you may want to improve this
     const wineData = parseWineDetails(wineAnalysis);
+    console.log(`[${requestId}] [${jobId}] Parsed wine data:`, JSON.stringify(wineData, null, 2));
     
     // Store result in KV
     await kv.hset(`job:${jobId}`, {
@@ -167,8 +172,10 @@ export default async function handler(
       updatedAt: new Date().toISOString()
     });
 
-    // Return results immediately
-    return res.status(200).json({
+    console.log(`[${requestId}] [${jobId}] Stored results in KV, returning response`);
+    
+    // Return results immediately - make sure we're not streaming and returning a complete response
+    const responseData = {
       jobId,
       status: 'completed',
       requestId,
@@ -176,14 +183,31 @@ export default async function handler(
         wines: [wineData],
         imageUrl: url
       }
-    });
+    };
+    
+    return res.status(200).json(responseData);
 
   } catch (error: any) {
-    console.error(`[${requestId}] Error analyzing wine:`, error);
+    console.error(`[${requestId}] [${jobId}] Error analyzing wine:`, error);
+    
+    // Update KV with the error
+    try {
+      await kv.hset(`job:${jobId}`, {
+        status: 'failed',
+        error: error.message || 'Unknown error',
+        updatedAt: new Date().toISOString(),
+        failedAt: new Date().toISOString()
+      });
+      console.log(`[${requestId}] [${jobId}] Updated KV with error status`);
+    } catch (kvError) {
+      console.error(`[${requestId}] [${jobId}] Failed to update KV with error:`, kvError);
+    }
+    
+    // Return error with the jobId
     return res.status(500).json({
       status: 'error',
       message: error.message || 'Failed to analyze image',
-      jobId: ''
+      jobId // Always include jobId in the response
     });
   }
 }
