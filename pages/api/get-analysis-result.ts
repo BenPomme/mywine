@@ -16,6 +16,7 @@ interface JobResult {
 
 // Define the response type for this API route
 type StatusApiResponse = {
+  success: boolean;  // Add success property
   status: JobResult['status'] | 'not_found';
   message?: string;
   data?: Omit<JobResult, 'status'>; // Return all data except the status itself
@@ -32,6 +33,7 @@ export default async function handler(
   if (!jobId || typeof jobId !== 'string') {
     console.error(`[${requestId}] Missing or invalid jobId in query parameters`);
     return res.status(400).json({ 
+      success: false,
       message: 'Missing or invalid jobId parameter',
       status: 'not_found',
       details: 'No jobId provided in query parameters'
@@ -48,6 +50,7 @@ export default async function handler(
     } catch (error) {
       console.error(`[${requestId}] KV connection failed:`, error);
       return res.status(500).json({ 
+        success: false,
         message: 'Failed to connect to KV store',
         status: 'failed',
         details: 'KV connection error'
@@ -61,6 +64,7 @@ export default async function handler(
     if (!jobData) {
       console.error(`[${requestId}] No data found for job ${jobId}`);
       return res.status(404).json({ 
+        success: false,
         message: 'Job not found',
         status: 'not_found',
         details: 'No data found in KV store'
@@ -74,6 +78,7 @@ export default async function handler(
 
     // Return the current status and any available data
     return res.status(200).json({
+      success: true,
       status: job.status,
       data: {
         error: job.error,
@@ -89,6 +94,7 @@ export default async function handler(
   } catch (error: any) {
     console.error(`[${requestId}] Error fetching job status:`, error);
     return res.status(500).json({ 
+      success: false,
       message: 'Failed to fetch job status',
       status: 'failed',
       details: error.message
