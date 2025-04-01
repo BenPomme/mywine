@@ -1,6 +1,6 @@
-# Wine Picker
+# Wine Finder
 
-A modern web application that analyzes wine labels and menus using AI, providing detailed information, ratings, and reviews from wine experts.
+AI-powered wine identification and rating app.
 
 ## Features
 
@@ -93,4 +93,4 @@ The application uses Next.js API routes to securely handle external API calls:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-Last deployment trigger: [Current timestamp] 
+Last deployment trigger: [Updated timestamp to trigger deployment] 
