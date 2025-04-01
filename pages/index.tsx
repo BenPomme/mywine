@@ -166,7 +166,20 @@ export default function Home() {
         body: JSON.stringify({ image: base64Image }),
       });
       
-      // Check for non-2xx status codes (specifically 202 Accepted)
+      // Handle 504 Gateway Timeout specifically
+      if (response.status === 504) {
+        console.log("Received 504 timeout, but continuing with polling...");
+        // Try to get the jobId from the response headers or body
+        const data = await response.json().catch(() => ({}));
+        if (data.jobId) {
+          console.log(`Analysis job started with ID: ${data.jobId}`);
+          setJobId(data.jobId);
+          setPollingStatus('polling');
+          return; // Exit early but keep polling
+        }
+      }
+      
+      // Check for other non-2xx status codes (specifically 202 Accepted)
       if (!response.ok && response.status !== 202) {
         const errorText = await response.text();
         console.error(`Trigger API error (${response.status}):`, errorText);
