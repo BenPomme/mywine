@@ -9,6 +9,21 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Define WineData type to fix type error
+type WineData = {
+  name: string;
+  producer: string;
+  vintage: string;
+  region: string;
+  varietal: string;
+  type: string;
+  score: number;
+  summary: string;
+  imageUrl: string;
+  ratingSource: string;
+  additionalReviews: Array<{source: string, review: string}>;
+};
+
 type AnalyzeRequestBody = {
   image: string;
 };
@@ -18,7 +33,10 @@ type AnalyzeResponseData = {
   status: string;
   requestId?: string;
   message?: string;
-  data?: any;
+  data?: {
+    wines: WineData[];
+    imageUrl: string;
+  };
 };
 
 export default async function handler(
@@ -101,8 +119,8 @@ export default async function handler(
       ]
     });
 
-    // Process OpenAI response
-    const wineAnalysis = completion.choices[0].message.content || '';
+    // Process OpenAI response with proper null checking
+    const wineAnalysis = completion.choices[0]?.message?.content || '';
     console.log(`[${requestId}] [${jobId}] OpenAI analysis complete`);
 
     // Parse the analysis into structured data
@@ -143,21 +161,9 @@ export default async function handler(
 }
 
 // Helper function to parse the unstructured text from OpenAI into structured data
-function parseWineDetails(analysisText: string): any {
+function parseWineDetails(analysisText: string): WineData {
   // Create a default structure
-  const wineData: {
-    name: string;
-    producer: string;
-    vintage: string;
-    region: string;
-    varietal: string;
-    type: string;
-    score: number;
-    summary: string;
-    imageUrl: string;
-    ratingSource: string;
-    additionalReviews: Array<{source: string, review: string}>;
-  } = {
+  const wineData: WineData = {
     name: '',
     producer: '',
     vintage: '',
