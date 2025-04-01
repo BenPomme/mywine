@@ -39,6 +39,25 @@ type AnalyzeResponseData = {
   };
 };
 
+// Validate image format and extract base64 data
+function validateAndExtractImageData(imageStr: string): string | null {
+  if (!imageStr || typeof imageStr !== 'string') return null;
+  
+  // Handle data URLs (e.g., "data:image/jpeg;base64,/9j/4AAQ...")
+  if (imageStr.startsWith('data:')) {
+    const parts = imageStr.split(',');
+    if (parts.length !== 2) return null;
+    return parts[1];
+  }
+  
+  // Handle raw base64 strings
+  if (/^[A-Za-z0-9+/=]+$/.test(imageStr)) {
+    return imageStr;
+  }
+  
+  return null;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<AnalyzeResponseData>
@@ -71,9 +90,19 @@ export default async function handler(
     const jobId = uuidv4();
     console.log(`[${requestId}] Generated Job ID: ${jobId}`);
 
+    // Validate and extract the base64 image data
+    const imageData = validateAndExtractImageData(image);
+    if (!imageData) {
+      console.error(`[${requestId}] Invalid image data format`);
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Invalid image data format. Expected base64 string or data URL',
+        jobId 
+      });
+    }
+
     // Upload image to Blob storage
     console.log(`[${requestId}] [${jobId}] Uploading image to Vercel Blob...`);
-    const imageData = image.split(',')[1]; // Remove data URL prefix
     const buffer = Buffer.from(imageData, 'base64');
     
     // Upload the image to Vercel Blob storage
