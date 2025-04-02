@@ -165,8 +165,8 @@ export default async function handler(
         console.log(`[${requestId}] [${jobId}] Starting web search/review/image process for: ${searchQueryBase}`);
         
         // Step 1: Use Web Search for Textual Info (Reviews, Ratings)
-        const textSearchQuery = `${searchQueryBase} wine reviews ratings tasting notes`;
-        console.log(`[${requestId}] [${jobId}] Performing text web search for: ${textSearchQuery}`);
+        const textSearchQuery = `${searchQueryBase} wine reviews ratings tasting notes vivino decanter wine-searcher`;
+        console.log(`[${requestId}] [${jobId}] Performing targeted text web search for: ${textSearchQuery}`);
         let webSearchTextContent = 'No specific web results found.'; // Default value
         try {
           const textSearchCompletion = await openai.chat.completions.create({
@@ -174,11 +174,11 @@ export default async function handler(
             messages: [
               {
                 role: "system",
-                content: "You are a web search assistant. Search the web for professional reviews, ratings, and tasting notes for the specified wine. Return ONLY the raw text snippets found (e.g., key sentences from reviews), each on a new line. Do NOT summarize or add any commentary. If no relevant snippets are found, return only the text 'No snippets found.'"
+                content: "You are a web search assistant focused on wine. Search ONLY Vivino, Decanter, and Wine-Searcher for professional reviews, ratings, and tasting notes for the specified wine. Return ONLY the raw text snippets found (e.g., key sentences from reviews), each on a new line, mentioning the source (Vivino/Decanter/Wine-Searcher). Do NOT summarize or add any commentary. If no relevant snippets are found on these sites, return only the text 'No snippets found on Vivino, Decanter, or Wine-Searcher.'"
               },
               {
                 role: "user",
-                content: `Find raw review/rating snippets for: ${textSearchQuery}`
+                content: `Find raw review/rating snippets from Vivino, Decanter, or Wine-Searcher for: ${searchQueryBase}`
               }
             ],
             tools: [
@@ -206,9 +206,9 @@ export default async function handler(
             webSearchTextContent = 'Error during web search.';
         }
 
-        // Step 2: Use Web Search Specifically for Image URL
+        // Step 2: Use Web Search Specifically for Image URL from Google Images
         const imageSearchQuery = `${searchQueryBase} wine bottle image`;
-        console.log(`[${requestId}] [${jobId}] Performing image web search for: ${imageSearchQuery}`);
+        console.log(`[${requestId}] [${jobId}] Performing Google Image web search for: ${imageSearchQuery}`);
         let imageUrl = '';
         try {
             const imageSearchCompletion = await openai.chat.completions.create({
@@ -216,11 +216,11 @@ export default async function handler(
                 messages: [
                 {
                     role: "system",
-                    content: "You are an image finding assistant. Search the web and provide ONLY the direct URL to a relevant image of the specified wine bottle. If no specific image is found, respond with only the text 'No image found.'."
+                    content: "You are an image finding assistant. Search ONLY Google Images and provide ONLY the direct URL to the single most relevant image of the specified wine bottle. If no specific image is found on Google Images, respond with only the text 'No image found on Google Images.'."
                 },
                 {
                     role: "user",
-                    content: `Find an image URL for: ${imageSearchQuery}`
+                    content: `Find a Google Images URL for: ${imageSearchQuery}`
                 }
                 ],
                 tools: [
