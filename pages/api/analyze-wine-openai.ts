@@ -167,14 +167,14 @@ export default async function handler(
         // Step 1: Use Web Search for Textual Info (Reviews, Ratings)
         const textSearchQuery = `${searchQueryBase} wine reviews ratings tasting notes`;
         console.log(`[${requestId}] [${jobId}] Performing text web search for: ${textSearchQuery}`);
-        let webSearchTextContent = '';
+        let webSearchTextContent = 'No specific web results found.'; // Default value
         try {
           const textSearchCompletion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
               {
                 role: "system",
-                content: "You are a helpful assistant. Search the web for professional reviews, ratings, and tasting notes for the specified wine. Summarize your findings concisely. If no information is found, state that clearly."
+                content: "You are a helpful assistant. Search the web for professional reviews, ratings, and tasting notes for the specified wine. Summarize your findings concisely, including quotes and sources if possible. If no information is found, state that clearly."
               },
               {
                 role: "user",
@@ -256,34 +256,53 @@ export default async function handler(
         }
         console.log(`[${requestId}] [${jobId}] Final Extracted image URL for ${searchQueryBase}: ${imageUrl}`);
 
-        // Step 3: Generate final review using initial analysis + text web results
-        console.log(`[${requestId}] [${jobId}] Generating final review for: ${searchQueryBase}`);
+        // Step 3: Generate final review and rating
+        console.log(`[${requestId}] [${jobId}] Generating final review and rating for: ${searchQueryBase}`);
         let finalReview = wine.tastingNotes; // Default to original notes
+        let finalScore = wine.score || 0; // Default to original score
         try {
             const reviewCompletion = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [
                 {
                     role: "system",
-                    content: "You are a professional wine critic. Synthesize the provided initial analysis and the web search findings into a single, comprehensive, and engaging review. Include tasting notes, food pairings, rating/score (if available), and overall impression. Rely more on the initial analysis if web search findings are scarce or state that explicitly."
+                    content: "You are a professional wine critic. Synthesize the provided initial analysis and the web search findings into TWO distinct outputs:\n1. A concise final review (max 2 sentences).\n2. A numerical score (1-100) based on all available information (initial analysis and web findings). If a score is provided in the web findings or initial analysis, lean towards that, otherwise estimate based on descriptions.\n\nRespond ONLY with a JSON object containing 'review' and 'score' keys, like this:\n{\"review\": \"[Your 1-2 sentence review here]...\", \"score\": [number 1-100]}"
                 },
                 {
                     role: "user",
-                    content: `Create a final review combining these details for ${searchQueryBase}:\n\n== Initial Analysis (from image) ==\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\nRegion: ${wine.region}\nGrape Varieties: ${wine.grapeVarieties}\nTasting Notes: ${wine.tastingNotes}\nScore: ${wine.score}\nPrice: ${wine.price}\n\n== Web Search Findings (Text) ==\n${webSearchTextContent}`
+                    content: `Create the JSON output (review and score) for ${searchQueryBase}:\n\n== Initial Analysis (from image) ==\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\nRegion: ${wine.region}\nGrape Varieties: ${wine.grapeVarieties}\nTasting Notes: ${wine.tastingNotes}\nScore: ${wine.score}\nPrice: ${wine.price}\n\n== Web Search Findings (Text) ==\n${webSearchTextContent}`
                 }
-                ]
+                ],
+                // Ensure response is JSON
+                response_format: { type: "json_object" } 
             });
-            finalReview = reviewCompletion.choices[0]?.message?.content || finalReview;
-            console.log(`[${requestId}] [${jobId}] Generated final review for ${searchQueryBase}:`, finalReview);
+
+            const reviewContent = reviewCompletion.choices[0]?.message?.content;
+            console.log(`[${requestId}] [${jobId}] Raw review/score response content for ${searchQueryBase}:`, reviewContent);
+            if (reviewContent) {
+                try {
+                    const parsedResponse = JSON.parse(reviewContent);
+                    finalReview = parsedResponse.review || finalReview;
+                    finalScore = parsedResponse.score || finalScore;
+                    console.log(`[${requestId}] [${jobId}] Parsed review: ${finalReview}`);
+                    console.log(`[${requestId}] [${jobId}] Parsed score: ${finalScore}`);
+                } catch (parseError) {
+                    console.error(`[${requestId}] [${jobId}] Failed to parse review/score JSON:`, parseError, reviewContent);
+                    // Attempt to extract review from raw content if JSON fails
+                    finalReview = reviewContent.substring(0, 200); // Fallback to raw content snippet
+                }
+            }
         } catch (reviewError) {
-            console.error(`[${requestId}] [${jobId}] Error during final review generation for ${searchQueryBase}:`, reviewError);
+            console.error(`[${requestId}] [${jobId}] Error during final review/score generation for ${searchQueryBase}:`, reviewError);
         }
         
         // Step 4: Return combined data
         return {
           ...wine,
-          tastingNotes: finalReview,
-          imageUrl: imageUrl || wine.imageUrl // Use found image URL, fallback to original if any
+          tastingNotes: finalReview, // This now holds the CONCISE review
+          score: finalScore, // The generated/validated score
+          imageUrl: imageUrl || wine.imageUrl, // Use found image URL, fallback to original if any
+          webSearchResults: webSearchTextContent // Pass raw web search results for frontend snippets
         };
       } catch (error) {
         // Catch errors in the overall wine processing block

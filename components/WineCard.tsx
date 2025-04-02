@@ -1,16 +1,57 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Wine } from '../utils/types';
 import ReviewSection from './ReviewSection';
 import RatingStars from './RatingStars';
 
 interface WineCardProps {
-  wine: Wine;
+  wine: Wine & { webSearchResults?: string };
   isFeatured?: boolean;
 }
 
-const WineCard = ({ wine, isFeatured = false }: WineCardProps) => {
+// Helper to generate star icons based on score (out of 100)
+const renderStars = (score: number) => {
+  const stars = [];
+  const normalizedScore = Math.max(0, Math.min(100, score)); // Ensure score is 0-100
+  const filledStars = Math.round(normalizedScore / 20); // 5 stars, each represents 20 points
+  const hasHalfStar = (normalizedScore % 20) >= 10;
+
+  for (let i = 1; i <= 5; i++) {
+    if (i <= filledStars) {
+      stars.push(<span key={i} className="text-yellow-400">&#9733;</span>); // Filled star
+    } else if (i === filledStars + 1 && hasHalfStar) {
+        // Basic half-star representation (adjust CSS if needed for better visuals)
+        stars.push(
+            <span key={i} className="relative inline-block text-yellow-400">
+                &#9733; 
+                <span className="absolute top-0 left-0 w-1/2 overflow-hidden text-gray-300">&#9733;</span>
+            </span>
+        );
+    } else {
+      stars.push(<span key={i} className="text-gray-300">&#9734;</span>); // Empty star
+    }
+  }
+  return stars;
+};
+
+// Helper to try and extract snippets from raw web search results
+const parseWebResults = (results: string): { source: string, snippet: string }[] => {
+    if (!results || results === 'No specific web results found.' || results === 'Error during web search.') {
+        return [];
+    }
+    // Basic heuristic: Look for lines that might be quotes or summaries
+    // This is very basic and might need significant improvement based on actual API output
+    const lines = results.split('\n').filter(line => line.trim().length > 10); // Filter short lines
+    return lines.slice(0, 5).map((line, index) => ({
+        source: `Web Snippet ${index + 1}`, // Placeholder source
+        snippet: line.trim()
+    }));
+};
+
+const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [showWebResults, setShowWebResults] = useState(false);
+  const webSnippets = parseWebResults(wine.webSearchResults || '');
 
   // Handle user rating change
   const handleRatingChange = (rating: number) => {
@@ -125,6 +166,29 @@ const WineCard = ({ wine, isFeatured = false }: WineCardProps) => {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Collapsible Web Search Results Section */}
+          {webSnippets.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button 
+                onClick={() => setShowWebResults(!showWebResults)}
+                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
+              >
+                {showWebResults ? 'Hide' : 'Show'} Web Search Snippets
+                <svg className={`ml-1 w-4 h-4 transform ${showWebResults ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              {showWebResults && (
+                <div className="mt-2 space-y-2">
+                  {webSnippets.map((snippet, index) => (
+                    <div key={index} className="p-2 bg-gray-50 rounded">
+                      <p className="text-xs text-gray-500 mb-1">Source: {snippet.source}</p>
+                      <p className="text-sm text-gray-700">"{snippet.snippet}"</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
