@@ -44,30 +44,38 @@ const parseWebSnippets = (snippetsText: string): { source: string, snippet: stri
         'Web search performed, but snippets require further processing.',
         'No snippets found on Vivino, Decanter, or Wine-Searcher.',
         'Failed to get snippets after tool call simulation.',
-        'Error retrieving snippets after tool simulation.'
+        'Error retrieving snippets after tool simulation.',
+        'No relevant snippets found.'
     ];
 
-    if (!snippetsText || defaultMessages.includes(snippetsText.trim())) {
+    // Trim and check against default/error messages
+    const trimmedText = snippetsText?.trim() || '';
+    if (!trimmedText || defaultMessages.includes(trimmedText)) {
         return [];
     }
     
-    // Split by newline and filter out empty lines
-    const lines = snippetsText.split('\n').filter(line => line.trim().length > 0);
+    // Split by newline and filter out empty/short lines
+    const lines = trimmedText.split('\n').filter(line => line.trim().length > 5);
     
-    // Try to extract source if mentioned (e.g., "Source: Vivino - Snippet...")
     return lines.map((line, index) => {
-        const sourceMatch = line.match(/^(?:Source:|From)\s*([^:-]+):?\s*-\s*(.*)/i);
-        if (sourceMatch) {
-            return {
-                source: sourceMatch[1].trim(),
-                snippet: sourceMatch[2].trim()
-            };
+        let source = `Web Snippet ${index + 1}`; // Default source
+        let snippet = line.trim();
+
+        // Try to extract source if mentioned (e.g., "Source: Vivino - ..." or "Vivino: ...")
+        const sourceMatch = snippet.match(/^(?:Source:|From|Vivino|Decanter|Wine-Searcher)[:\s-]+(.+)/i);
+        if (sourceMatch && sourceMatch[1]) {
+            // Try to identify the source name more reliably
+            const potentialSource = snippet.substring(0, sourceMatch.index || 0).trim().replace(/[:\s-]+$/, '');
+            if (potentialSource.length > 2) { // Avoid grabbing just punctuation
+                source = potentialSource;
+            }
+            snippet = sourceMatch[1].trim(); // The rest is the snippet
         }
-        // Fallback if no explicit source found
-        return {
-            source: `Web Snippet ${index + 1}`,
-            snippet: line.trim()
-        };
+        
+        // Remove leading/trailing quotes if present
+        snippet = snippet.replace(/^["'\s]+|["'\s]+$/g, '');
+
+        return { source, snippet };
     });
 };
 
