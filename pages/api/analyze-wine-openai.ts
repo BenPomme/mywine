@@ -174,11 +174,11 @@ export default async function handler(
             messages: [
               {
                 role: "system",
-                content: "You are a helpful assistant. Search the web for professional reviews, ratings, and tasting notes for the specified wine. Summarize your findings concisely, including quotes and sources if possible. If no information is found, state that clearly."
+                content: "You are a web search assistant. Search the web for professional reviews, ratings, and tasting notes for the specified wine. Return ONLY the raw text snippets found (e.g., key sentences from reviews), each on a new line. Do NOT summarize or add any commentary. If no relevant snippets are found, return only the text 'No snippets found.'"
               },
               {
                 role: "user",
-                content: `Find and summarize web information for: ${textSearchQuery}`
+                content: `Find raw review/rating snippets for: ${textSearchQuery}`
               }
             ],
             tools: [
