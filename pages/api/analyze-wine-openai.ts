@@ -199,6 +199,8 @@ export default async function handler(
             ],
             tool_choice: "auto"
           });
+          // Log the entire message object for debugging
+          console.log(`[${requestId}] [${jobId}] Full text search message object for ${searchQueryBase}:`, JSON.stringify(textSearchCompletion.choices[0]?.message, null, 2));
           webSearchTextContent = textSearchCompletion.choices[0]?.message?.content || 'No specific web results found.';
           console.log(`[${requestId}] [${jobId}] Text web search response content for ${searchQueryBase}:`, webSearchTextContent);
         } catch(searchError) {
@@ -242,6 +244,8 @@ export default async function handler(
                 tool_choice: "auto"
             });
 
+            // Log the entire message object for debugging
+            console.log(`[${requestId}] [${jobId}] Full image search message object for ${searchQueryBase}:`, JSON.stringify(imageSearchCompletion.choices[0]?.message, null, 2));
             const imageSearchContent = imageSearchCompletion.choices[0]?.message?.content || '';
             console.log(`[${requestId}] [${jobId}] Image search response content for ${searchQueryBase}:`, imageSearchContent);
             if (imageSearchContent && !imageSearchContent.toLowerCase().includes('no image found')) {
