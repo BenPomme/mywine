@@ -171,151 +171,56 @@ export default async function handler(
         let actualTextSnippets = "No specific web results found."; // Initialize
         
         try {
-          // Initial request for text search
-          const initialTextSearchMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+          // Single call asking for snippets directly in content
+          const textSearchCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
               {
                 role: "system",
-                content: "You are a web search assistant focused on wine. Search ONLY Vivino, Decanter, and Wine-Searcher for professional reviews, ratings, and tasting notes for the specified wine. Indicate if you need to perform a search."
+                content: "You are a web search assistant focused on wine. Search ONLY Vivino, Decanter, and Wine-Searcher for professional reviews, ratings, and tasting notes for the specified wine. Return 2-4 key snippets DIRECTLY in your response, each on a new line, clearly stating the source (Vivino/Decanter/Wine-Searcher). Example:\nSource: Vivino - [snippet]\nSource: Decanter - [snippet]\nIf none found on these sites, respond ONLY with 'No relevant snippets found on Vivino, Decanter, or Wine-Searcher.'"
               },
               {
                 role: "user",
-                content: `Find raw review/rating snippets from Vivino, Decanter, or Wine-Searcher for: ${searchQueryBase}`
-              }
-          ];
-          const textSearchCompletion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: initialTextSearchMessages,
-            tools: [
-              {
-                type: "function",
-                function: {
-                  name: "web_search",
-                  description: "Search the web for wine reviews, ratings, and tasting notes",
-                  parameters: {
-                    type: "object",
-                    properties: {
-                      query: { type: "string", description: "Search query for wine reviews/ratings" }
-                    },
-                    required: ["query"]
-                  }
-                }
+                content: `Find 2-4 review/rating snippets from Vivino, Decanter, or Wine-Searcher for: ${searchQueryBase}`
               }
             ],
-            tool_choice: "auto"
+            // No tools needed for this direct approach
           });
           
-          const textSearchAssistantMessage = textSearchCompletion.choices[0]?.message;
-          console.log(`[${requestId}] [${jobId}] Initial text search assistant message for ${searchQueryBase}:`, JSON.stringify(textSearchAssistantMessage, null, 2));
-
-          // Handle tool call if present
-          if (textSearchAssistantMessage?.tool_calls) {
-            console.log(`[${requestId}] [${jobId}] Text search tool call detected. Simulating tool response and making follow-up call.`);
-            const toolFollowUpMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-              ...initialTextSearchMessages, // Include original context
-              textSearchAssistantMessage, // Assistant's decision to call tool
-              // Add simulated tool responses
-              ...textSearchAssistantMessage.tool_calls.map(tc => ({ 
-                tool_call_id: tc.id,
-                role: "tool" as const,
-                content: `Simulated execution for tool call ${tc.id} with args ${tc.function.arguments}. Provide the raw text snippets found from Vivino/Decanter/Wine-Searcher, each on a new line with source, or state 'No snippets found'.`
-              }))
-            ];
-
-            try {
-              const textToolResponseCompletion = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: toolFollowUpMessages, // Send history including tool 'results'
-              });
-              actualTextSnippets = textToolResponseCompletion.choices[0]?.message?.content || "Failed to get snippets after tool call simulation.";
-              console.log(`[${requestId}] [${jobId}] Follow-up text search response content:`, actualTextSnippets);
-            } catch (toolResponseError) {
-              console.error(`[${requestId}] [${jobId}] Error during follow-up text search call:`, toolResponseError);
-              actualTextSnippets = "Error retrieving snippets after tool simulation.";
-            }
-          } else if (textSearchAssistantMessage?.content) {
-            // If model answered directly without tools
-            actualTextSnippets = textSearchAssistantMessage.content;
-             console.log(`[${requestId}] [${jobId}] Text search response content (no tool call):`, actualTextSnippets);
-          }
+          // Extract content directly
+          actualTextSnippets = textSearchCompletion.choices[0]?.message?.content || "Failed to get text search response.";
+          console.log(`[${requestId}] [${jobId}] Text search direct response content:`, actualTextSnippets);
 
         } catch(searchError) {
-            console.error(`[${requestId}] [${jobId}] *** ERROR during initial text web search API call for ${searchQueryBase}: ***`, searchError);
+            console.error(`[${requestId}] [${jobId}] *** ERROR during direct text web search API call for ${searchQueryBase}: ***`, searchError);
             actualTextSnippets = 'Error during web search.';
         }
 
-        // Step 2: Use Web Search Specifically for Image URL from Google Images
+        // Step 2: Use Web Search Specifically for Image URL (Direct Approach)
         const imageSearchQuery = `${searchQueryBase} wine bottle image`;
         console.log(`[${requestId}] [${jobId}] Performing Google Image web search for: ${imageSearchQuery}`);
         let imageUrl = '';
         try {
-            const initialImageSearchMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            // Single call asking for URL directly in content
+            const imageSearchCompletion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
                 {
                     role: "system",
-                    content: "You are an image finding assistant. Search ONLY Google Images for the specified wine bottle image. Indicate if you need to perform a search."
+                    content: "You are an image finding assistant. Search ONLY Google Images and provide ONLY the direct URL to the single most relevant image of the specified wine bottle. If no specific image is found on Google Images, respond ONLY with 'No image found on Google Images.'."
                 },
                 {
                     role: "user",
                     content: `Find a Google Images URL for: ${imageSearchQuery}`
                 }
-            ];
-            const imageSearchCompletion = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: initialImageSearchMessages,
-                tools: [
-                  {
-                    type: "function",
-                    function: {
-                      name: "web_search",
-                      description: "Search the web for wine bottle images",
-                      parameters: {
-                        type: "object",
-                        properties: {
-                          query: { type: "string", description: "Search query for wine bottle images" }
-                        },
-                        required: ["query"]
-                      }
-                    }
-                  }
                 ],
-                tool_choice: "auto"
+                 // No tools needed for this direct approach
             });
 
-            const imageSearchAssistantMessage = imageSearchCompletion.choices[0]?.message;
-            console.log(`[${requestId}] [${jobId}] Initial image search assistant message for ${searchQueryBase}:`, JSON.stringify(imageSearchAssistantMessage, null, 2));
+            const finalImageSearchContent = imageSearchCompletion.choices[0]?.message?.content || '';
+            console.log(`[${requestId}] [${jobId}] Image search direct response content:`, finalImageSearchContent);
 
-            let finalImageSearchContent = '';
-
-            // Handle tool call if present
-            if (imageSearchAssistantMessage?.tool_calls) {
-              console.log(`[${requestId}] [${jobId}] Image search tool call detected. Simulating tool response and making follow-up call.`);
-              const toolCall = imageSearchAssistantMessage.tool_calls[0]; // Assume one tool call for image
-              const imageToolFollowUpMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-                  ...initialImageSearchMessages,
-                  imageSearchAssistantMessage,
-                  {
-                      tool_call_id: toolCall.id,
-                      role: "tool" as const,
-                      content: `Simulated execution for tool call ${toolCall.id} with args ${toolCall.function.arguments}. Provide ONLY the single best image URL found on Google Images, or state 'No image found'.`
-                  }
-              ];
-              try {
-                  const imageToolResponseCompletion = await openai.chat.completions.create({
-                      model: "gpt-4o",
-                      messages: imageToolFollowUpMessages,
-                  });
-                  finalImageSearchContent = imageToolResponseCompletion.choices[0]?.message?.content || '';
-                  console.log(`[${requestId}] [${jobId}] Follow-up image search response content:`, finalImageSearchContent);
-              } catch (toolResponseError) {
-                  console.error(`[${requestId}] [${jobId}] Error during follow-up image search call:`, toolResponseError);
-                  finalImageSearchContent = 'Error retrieving image URL after tool simulation.';
-              }
-            } else if (imageSearchAssistantMessage?.content) {
-               // If model answered directly
-               finalImageSearchContent = imageSearchAssistantMessage.content;
-               console.log(`[${requestId}] [${jobId}] Image search response content (no tool call):`, finalImageSearchContent);
-            }
-
-            // Extract URL from the final content (after potential tool call follow-up)
+            // Extract URL from the direct content
             if (finalImageSearchContent && !finalImageSearchContent.toLowerCase().includes('no image found')) {
                 const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i;
                 const foundUrls = finalImageSearchContent.match(urlRegex);
@@ -325,7 +230,7 @@ export default async function handler(
             }
 
         } catch (imageSearchError) {
-            console.error(`[${requestId}] [${jobId}] *** Error during initial image web search API call for ${searchQueryBase}: ***`, imageSearchError);
+            console.error(`[${requestId}] [${jobId}] *** ERROR during direct image web search API call for ${searchQueryBase}: ***`, imageSearchError);
         }
         console.log(`[${requestId}] [${jobId}] Final Extracted image URL for ${searchQueryBase}: ${imageUrl}`);
 

@@ -8,6 +8,9 @@ interface WineCardProps {
   isFeatured?: boolean;
 }
 
+// Placeholder SVG (Simple gray square)
+const placeholderSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='10' height='10' fill='%23E5E7EB'/%3E%3C/svg%3E";
+
 // Helper to generate star icons based on score (out of 100)
 const renderStars = (score: number) => {
   const stars = [];
@@ -98,12 +101,12 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
         <div className="md:flex-shrink-0 p-4 flex items-center justify-center md:w-1/3">
           <img 
             className="h-48 w-full object-contain md:h-full md:w-48" 
-            src={wine.imageUrl || 'data:image/svg+xml;base64,...'} // Use found image, fallback
+            src={wine.imageUrl || placeholderSvg} // Use the valid placeholder
             alt={`${wine.winery} ${wine.name}`}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               target.onerror = null; 
-              target.src = 'data:image/svg+xml;base64,...'; 
+              target.src = placeholderSvg; // Fallback to the valid placeholder
             }}
           />
         </div>
