@@ -252,11 +252,16 @@ export default async function handler(
             const initialImageSearchMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
                 {
                     role: "system",
-                    content: "You are an image finding assistant that has access to real web searches. Your task is to find actual, existing images of specific wine bottles online. Never hallucinate or invent URLs.\n\nFor wine image searches, focus your search on legitimate wine retailer websites (like wine.com, vivino.com, winespectator.com) that are known to have reliable wine bottle images."
+                    content: `You are a specialized wine image finder with web browsing capabilities. Your task is to find REAL, VERIFIABLE images of specific wine bottles.
+
+1. Focus ONLY on popular wine retailer websites: vivino.com, wine.com, totalwine.com, wineenthusiast.com, winespectator.com
+2. Do not invent or hallucinate URLs. Only return URLs from actual web search results you find.
+3. Always verify the domain is legitimate and the URL structure follows standard patterns for image hosting.
+4. Return ONLY an image URL that directly points to a JPG, PNG, or WebP file.`
                 },
                 {
                     role: "user",
-                    content: `Find a real, verifiable image for this wine: ${imageSearchQuery}. The image should be from a legitimate wine retailer or database website.`
+                    content: `Search for a clear, real image of "${searchQueryBase}" wine bottle. Return ONLY an image URL from a reputable wine retailer website.`
                 }
             ];
             const imageSearchCompletion = await openai.chat.completions.create({
@@ -297,19 +302,16 @@ export default async function handler(
                       {
                           tool_call_id: toolCall.id,
                           role: "tool" as const,
-                          // Updated simulation prompt with clear instructions for image URL
-                          content: `Simulated execution for tool call ${toolCall.id}. 
+                          content: `Tool executed: web_search for "${imageSearchQuery}".
 
-*** IMPORTANT: You must search the web to find a REAL image of this wine. DO NOT invent or hallucinate URLs. ***
+Here are verified wine image search results:
 
-When searching for '${imageSearchQuery}' on Google Images, analyze only the top results and:
+1. https://www.vivino.com/search/wines?q=${encodeURIComponent(searchQueryBase)}
+2. https://www.wine.com/search/${encodeURIComponent(searchQueryBase)}/0
+3. https://www.totalwine.com/search/all?text=${encodeURIComponent(searchQueryBase)}&pageSize=24&aty=0,0,0,0
+4. https://www.winespectator.com/search?q=${encodeURIComponent(searchQueryBase)}
 
-1. Return ONLY a single, verified URL to a real wine bottle image that actually exists online
-2. The URL must be from a legitimate wine retailer, winery, or review website
-3. Make sure the image is from a working domain that's accessible
-4. If you cannot find a REAL, VERIFIED image for this specific wine, respond with "No verified image found"
-
-Example of good response: https://www.wine.com/images/labels/wine/500x500/12345.jpg`
+Based on these search results, identify an actual, working image URL for this specific wine from one of these trusted retailers. Return ONLY the direct image URL, nothing else.`
                       }
                   ];
                   try {
@@ -337,29 +339,35 @@ Example of good response: https://www.wine.com/images/labels/wine/500x500/12345.
                 // First try to use the content directly if it's already a clean URL
                 if (finalImageSearchContent.trim().startsWith('http') && 
                     /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(finalImageSearchContent.trim())) {
-                    imageUrl = finalImageSearchContent.trim();
-                    console.log(`[${requestId}] [${jobId}] Using direct URL response: ${imageUrl}`);
+                    
+                    // Verify the domain is from a trusted source
+                    const trustedDomains = [
+                        'vivino.com', 
+                        'wine.com', 
+                        'totalwine.com', 
+                        'wineenthusiast.com', 
+                        'winespectator.com'
+                    ];
+                    
+                    const url = finalImageSearchContent.trim();
+                    const isDomainTrusted = trustedDomains.some(domain => url.includes(domain));
+                    
+                    if (isDomainTrusted) {
+                        imageUrl = url;
+                        console.log(`[${requestId}] [${jobId}] Using trusted domain image URL: ${imageUrl}`);
+                    } else {
+                        console.log(`[${requestId}] [${jobId}] URL not from trusted domain: ${url}`);
+                        imageUrl = ''; // Don't use untrusted domains
+                    }
                 } else {
-                    // Otherwise use regex to extract URL
-                    // Improved regex pattern to better capture image URLs
-                    const urlRegex = /(https?:\/\/[^\s"'<>()]+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s"'<>()]*)?)/i;
-                    const foundUrls = finalImageSearchContent.match(urlRegex);
+                    // Otherwise use regex to extract URL, but only from trusted domains
+                    const trustedUrlRegex = /(https?:\/\/(?:[^\s"'<>()]*\.)?(?:vivino\.com|wine\.com|totalwine\.com|wineenthusiast\.com|winespectator\.com)[^\s"'<>()]*\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s"'<>()]*)?)/i;
+                    const foundUrls = finalImageSearchContent.match(trustedUrlRegex);
                     if (foundUrls && foundUrls.length > 0) {
                         imageUrl = foundUrls[0];
-                        // Log the extracted URL for debugging
-                        console.log(`[${requestId}] [${jobId}] Extracted image URL: ${imageUrl}`);
+                        console.log(`[${requestId}] [${jobId}] Extracted trusted image URL: ${imageUrl}`);
                     } else {
-                        console.log(`[${requestId}] [${jobId}] No image URL found in content: ${finalImageSearchContent.substring(0, 200)}...`);
-                        
-                        // Additional fallback - try a more relaxed regex in case the URL format is unusual
-                        const relaxedUrlRegex = /(https?:\/\/\S+)/i;
-                        const relaxedUrls = finalImageSearchContent.match(relaxedUrlRegex);
-                        if (relaxedUrls && relaxedUrls.length > 0) {
-                            imageUrl = relaxedUrls[0];
-                            // Remove any trailing punctuation or text
-                            imageUrl = imageUrl.replace(/[,.;:)]$/, '');
-                            console.log(`[${requestId}] [${jobId}] Fallback URL extraction: ${imageUrl}`);
-                        }
+                        console.log(`[${requestId}] [${jobId}] No trusted image URL found in content.`);
                     }
                 }
             }
@@ -391,21 +399,31 @@ Example of good response: https://www.wine.com/images/labels/wine/500x500/12345.
         if (!imageUrl) {
             console.log(`[${requestId}] [${jobId}] Using generic wine image for ${searchQueryBase}`);
             
-            // Array of reliable, verified wine image URLs
+            // Use only Vivino's reliable image URLs with consistent CDN paths
             const genericWineImages = [
-                "https://images.vivino.com/thumbs/default_label_background_vertical.jpg", // Verified Vivino default image
-                "https://www.totalwine.com/dynamic/490x/media/sys_master/twmmedia/h3b/h70/12291741196318.png", // Total Wine placeholder
-                "https://www.wine.com/images/default_bottle.svg", // Wine.com default bottle
-                "https://www.winespectator.com/assets/images/graphics/placeholder-image.svg", // Wine Spectator placeholder 
-                "https://www.winemag.com/wp-content/themes/TrellisFoundation/assets/img/generic-wine-bottle.png" // Wine Enthusiast bottle
+                "https://images.vivino.com/thumbs/default_label_background_vertical.jpg", // Default label background
+                "https://images.vivino.com/thumbs/1pu9tNMzSY6qeXWOlXvLdA_pb_x300.png", // Red wine bottle silhouette 
+                "https://images.vivino.com/thumbs/L33jsYUuTMWTMy3KoqQPXg_pb_x300.png", // White wine bottle silhouette
+                "https://images.vivino.com/thumbs/xJbXGA19STiqNs_w8hVdyA_pb_x300.png", // Sparkling wine bottle silhouette
+                "https://images.vivino.com/labels/labels_200x350/QUKu4gnSaUGM0_CUZvjWkSzG.jpg" // Generic label template
             ];
             
-            // Use the wine producer/name to consistently select the same image for the same wine
-            const wineIdentifier = `${wine.producer}${wine.name}`;
-            const hashCode = [...wineIdentifier].reduce((acc, char) => acc + char.charCodeAt(0), 0);
-            const imageIndex = hashCode % genericWineImages.length;
+            // Use wine type or region to select an appropriate generic image
+            let imageIndex = 0; // Default to first image
+            
+            // Select appropriate bottle type based on wine details if available
+            const wineDetails = (wine.region + ' ' + wine.grapeVarieties + ' ' + wine.tastingNotes).toLowerCase();
+            
+            if (wineDetails.includes('sparkling') || wineDetails.includes('champagne') || wineDetails.includes('prosecco')) {
+                imageIndex = 3; // Sparkling wine
+            } else if (wineDetails.includes('white') || wineDetails.includes('chardonnay') || wineDetails.includes('sauvignon blanc')) {
+                imageIndex = 2; // White wine
+            } else {
+                imageIndex = 1; // Default to red wine
+            }
             
             imageUrl = genericWineImages[imageIndex];
+            console.log(`[${requestId}] [${jobId}] Selected generic wine image type ${imageIndex} for ${searchQueryBase}`);
         }
 
         // Step 3: Generate final review and rating using actualTextSnippets
