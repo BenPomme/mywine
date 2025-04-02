@@ -4,7 +4,7 @@ import ReviewSection from './ReviewSection';
 import RatingStars from './RatingStars';
 
 interface WineCardProps {
-  wine: Wine & { webSearchResults?: string };
+  wine: Wine & { webSnippets?: string };
   isFeatured?: boolean;
 }
 
@@ -33,9 +33,46 @@ const renderStars = (score: number) => {
   return stars;
 };
 
+// Helper to parse snippets (assuming newline separated)
+const parseWebSnippets = (snippetsText: string): { source: string, snippet: string }[] => {
+    const defaultMessages = [
+        'No specific web results found.',
+        'Error during web search.',
+        'Web search performed, but snippets require further processing.',
+        'No snippets found on Vivino, Decanter, or Wine-Searcher.',
+        'Failed to get snippets after tool call simulation.',
+        'Error retrieving snippets after tool simulation.'
+    ];
+
+    if (!snippetsText || defaultMessages.includes(snippetsText.trim())) {
+        return [];
+    }
+    
+    // Split by newline and filter out empty lines
+    const lines = snippetsText.split('\n').filter(line => line.trim().length > 0);
+    
+    // Try to extract source if mentioned (e.g., "Source: Vivino - Snippet...")
+    return lines.map((line, index) => {
+        const sourceMatch = line.match(/^(?:Source:|From)\s*([^:-]+):?\s*-\s*(.*)/i);
+        if (sourceMatch) {
+            return {
+                source: sourceMatch[1].trim(),
+                snippet: sourceMatch[2].trim()
+            };
+        }
+        // Fallback if no explicit source found
+        return {
+            source: `Web Snippet ${index + 1}`,
+            snippet: line.trim()
+        };
+    });
+};
+
 const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [showSnippets, setShowSnippets] = useState(false);
+  const webSnippets = parseWebSnippets(wine.webSnippets || '');
 
   // Handle user rating change
   const handleRatingChange = (rating: number) => {
@@ -103,6 +140,29 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
               <p className="text-gray-600 text-sm">
                 {wine.summary} 
               </p>
+            </div>
+          )}
+
+           {/* Collapsible Web Snippets Section */} 
+          {webSnippets.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button 
+                onClick={() => setShowSnippets(!showSnippets)}
+                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
+              >
+                {showSnippets ? 'Hide' : 'Show'} Web Snippets
+                <svg className={`ml-1 w-4 h-4 transform ${showSnippets ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              {showSnippets && (
+                <div className="mt-2 space-y-2">
+                  {webSnippets.map((snippet, index) => (
+                    <div key={index} className="p-2 bg-gray-50 rounded">
+                      <p className="text-xs text-gray-500 mb-1">Source: {snippet.source}</p>
+                      <p className="text-sm text-gray-700">"{snippet.snippet}"</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -61,6 +61,7 @@ export default function Home() {
                     uploadedImageUrl: uploadedImageUrl,
                     score: wineData.score || 0,
                     summary: wineData.tastingNotes || '', // Concise review
+                    webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
                     rating: {
                       score: wineData.score || 0, 
                       source: wineData.ratingSource || 'AI Analysis',
@@ -184,6 +185,7 @@ export default function Home() {
           uploadedImageUrl: responseData.data.imageUrl || '',
           score: wineData.score || 0,
           summary: wineData.tastingNotes || '', // Concise review
+          webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
           rating: {
             score: wineData.score || 0, 
             source: wineData.ratingSource || 'AI Analysis',
@@ -247,6 +249,7 @@ export default function Home() {
                     uploadedImageUrl: uploadedImageUrl, 
                     score: wineData.score || 0,
                     summary: wineData.tastingNotes || '', // Concise review
+                    webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
                     rating: {
                       score: wineData.score || 0, 
                       source: wineData.ratingSource || 'AI Analysis',
