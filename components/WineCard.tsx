@@ -8,8 +8,9 @@ interface WineCardProps {
   isFeatured?: boolean;
 }
 
-// Placeholder SVG (Simple gray square)
+// Placeholder SVG and reliable fallback images
 const placeholderSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='10' height='10' fill='%23E5E7EB'/%3E%3C/svg%3E";
+const fallbackWineImage = "https://images.vivino.com/labels/default_label.jpg";
 
 // Helper to generate star icons based on score (out of 100)
 const renderStars = (score: number) => {
@@ -98,10 +99,21 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
 
   // Get a cleaned image URL or fallback to placeholder
   const getImageUrl = () => {
-    if (!wine.imageUrl || imageError) {
-      return placeholderSvg;
+    // First check if we have a wine.imageUrl that isn't empty and hasn't errored
+    if (wine.imageUrl && !imageError && wine.imageUrl.startsWith('http')) {
+      // Check for trusted domains that we know work reliably
+      const trustedDomains = ['images.vivino.com', 'www.wine.com', 'www.winespectator.com'];
+      for (const domain of trustedDomains) {
+        if (wine.imageUrl.includes(domain)) {
+          return wine.imageUrl; // Return trusted URLs directly
+        }
+      }
+      // For non-trusted domains, we still try the URL unless there was an error
+      return wine.imageUrl;
     }
-    return wine.imageUrl;
+    
+    // If the URL caused an error or doesn't exist, use fallback
+    return fallbackWineImage;
   };
 
   return (
@@ -112,7 +124,7 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
           <img 
             className="h-48 w-full object-contain md:h-full md:w-48" 
             src={getImageUrl()} 
-            alt={`${wine.winery || wine.producer} ${wine.name}`}
+            alt={`${wine.producer || wine.winery || ''} ${wine.name || ''}`}
             onError={handleImageError}
           />
         </div>
