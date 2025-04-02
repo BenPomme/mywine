@@ -55,24 +55,24 @@ export default function Home() {
                     winery: wineData.producer || wineData.winery || '',
                     year: wineData.vintage || wineData.year || '',
                     region: wineData.region || '',
-                    grapeVariety: wineData.varietal || wineData.grapeVariety || '',
+                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '', // Updated field name
                     type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', // This might be the detail image now
-                    uploadedImageUrl: uploadedImageUrl, // Need the originally uploaded one
+                    imageUrl: wineData.imageUrl || '', // Web search image URL
+                    uploadedImageUrl: uploadedImageUrl,
                     score: wineData.score || 0,
-                    summary: wineData.summary || '',
-                    aiSummary: wineData.summary || '', // Keep consistent for display
+                    summary: wineData.tastingNotes || '', // *** Use tastingNotes for the main review/summary ***
+                    aiSummary: wineData.tastingNotes || '', // Also use for aiSummary for consistency
                     rating: {
                       score: wineData.score || 0,
                       source: wineData.ratingSource || 'AI Analysis',
-                      review: '' // Keep this empty
+                      review: wineData.tastingNotes || '' // Populate rating review as well
                     },
                     additionalReviews: Array.isArray(wineData.additionalReviews) 
                       ? wineData.additionalReviews.map((review: any) => {
-                          if (typeof review === 'string') { // Should be object now based on Netlify func
+                          if (typeof review === 'string') { 
                             return { source: 'Review Snippet', review: review }; 
                           }
-                          return { source: review.source || 'Review Snippet', review: review.review || '' }; // Use source/review fields
+                          return { source: review.source || 'Review Snippet', review: review.review || '' };
                         })
                       : []
                   };
@@ -186,17 +186,17 @@ export default function Home() {
           winery: wineData.producer || wineData.winery || '',
           year: wineData.vintage || wineData.year || '',
           region: wineData.region || '',
-          grapeVariety: wineData.varietal || wineData.grapeVariety || '',
+          grapeVariety: wineData.grapeVarieties || wineData.varietal || '', // Updated field name
           type: wineData.type || '',
-          imageUrl: wineData.imageUrl || '',
+          imageUrl: wineData.imageUrl || '', // Web search image URL
           uploadedImageUrl: responseData.data.imageUrl || '',
           score: wineData.score || 0,
-          summary: wineData.summary || '',
-          aiSummary: wineData.summary || '',
+          summary: wineData.tastingNotes || '', // *** Use tastingNotes for the main review/summary ***
+          aiSummary: wineData.tastingNotes || '', // Also use for aiSummary for consistency
           rating: {
             score: wineData.score || 0,
             source: wineData.ratingSource || 'AI Analysis',
-            review: ''
+            review: wineData.tastingNotes || '' // Populate rating review as well
           },
           additionalReviews: Array.isArray(wineData.additionalReviews) 
             ? wineData.additionalReviews.map((review: any) => {
@@ -257,24 +257,24 @@ export default function Home() {
                     winery: wineData.producer || wineData.winery || '',
                     year: wineData.vintage || wineData.year || '',
                     region: wineData.region || '',
-                    grapeVariety: wineData.varietal || wineData.grapeVariety || '',
+                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '', // Updated field name
                     type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', // This might be the detail image now
-                    uploadedImageUrl: uploadedImageUrl, // Need the originally uploaded one
+                    imageUrl: wineData.imageUrl || '', // Web search image URL
+                    uploadedImageUrl: uploadedImageUrl, 
                     score: wineData.score || 0,
-                    summary: wineData.summary || '',
-                    aiSummary: wineData.summary || '', // Keep consistent for display
+                    summary: wineData.tastingNotes || '', // *** Use tastingNotes for the main review/summary ***
+                    aiSummary: wineData.tastingNotes || '', // Also use for aiSummary for consistency
                     rating: {
                       score: wineData.score || 0,
                       source: wineData.ratingSource || 'AI Analysis',
-                      review: '' // Keep this empty
+                      review: wineData.tastingNotes || '' // Populate rating review as well
                     },
                     additionalReviews: Array.isArray(wineData.additionalReviews) 
                       ? wineData.additionalReviews.map((review: any) => {
-                          if (typeof review === 'string') { // Should be object now based on Netlify func
+                          if (typeof review === 'string') { 
                             return { source: 'Review Snippet', review: review }; 
                           }
-                          return { source: review.source || 'Review Snippet', review: review.review || '' }; // Use source/review fields
+                          return { source: review.source || 'Review Snippet', review: review.review || '' };
                         })
                       : []
                   };
