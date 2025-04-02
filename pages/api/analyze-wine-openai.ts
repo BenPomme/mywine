@@ -207,11 +207,11 @@ export default async function handler(
                 messages: [
                 {
                     role: "system",
-                    content: "You are an image finding assistant. Search ONLY Google Images and provide ONLY the direct URL to the single most relevant image of the specified wine bottle. If no specific image is found on Google Images, respond ONLY with 'No image found on Google Images.'."
+                    content: "You are an image finding assistant. Search ONLY Google Images for the specified wine bottle. Find the single most relevant image and include its direct URL in your response. If no specific image is found on Google Images, respond ONLY with 'No image found on Google Images.'."
                 },
                 {
                     role: "user",
-                    content: `Find a Google Images URL for: ${imageSearchQuery}`
+                    content: `Find and provide a Google Images URL for: ${imageSearchQuery}`
                 }
                 ],
                  // No tools needed for this direct approach
