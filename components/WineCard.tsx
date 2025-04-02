@@ -92,12 +92,14 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
   };
 
   const handleImageError = () => {
+    console.log(`Image error for: ${wine.imageUrl}`);
     setImageError(true);
   };
 
+  // Get a cleaned image URL or fallback to placeholder
   const getImageUrl = () => {
-    if (imageError || !wine.imageUrl) {
-      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiNFNUU3RUIiLz48cGF0aCBkPSJNODAgMTIwTDEwMCA4MEwxMjAgMTIwSDgwWiIgZmlsbD0iIzk0QTNCOCIvPjwvc3ZnPg==';
+    if (!wine.imageUrl || imageError) {
+      return placeholderSvg;
     }
     return wine.imageUrl;
   };
@@ -109,13 +111,9 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
         <div className="md:flex-shrink-0 p-4 flex items-center justify-center md:w-1/3">
           <img 
             className="h-48 w-full object-contain md:h-full md:w-48" 
-            src={wine.imageUrl || placeholderSvg} // Use the valid placeholder
-            alt={`${wine.winery} ${wine.name}`}
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null; 
-              target.src = placeholderSvg; // Fallback to the valid placeholder
-            }}
+            src={getImageUrl()} 
+            alt={`${wine.winery || wine.producer} ${wine.name}`}
+            onError={handleImageError}
           />
         </div>
 

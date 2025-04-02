@@ -245,7 +245,7 @@ export default async function handler(
         }
 
         // Step 2: Image Search (Keep existing tool call flow, update simulation prompt)
-        const imageSearchQuery = `${searchQueryBase} Picture`; // Use user's suggested search format
+        const imageSearchQuery = `${searchQueryBase} IMAGE`; // Updated to use IMAGE keyword as requested
         console.log(`[${requestId}] [${jobId}] Performing Google Image web search (tool flow) for: ${imageSearchQuery}`);
         let imageUrl = '';
         try {
@@ -297,8 +297,15 @@ export default async function handler(
                       {
                           tool_call_id: toolCall.id,
                           role: "tool" as const,
-                          // Updated simulation prompt based on user feedback
-                          content: `Simulated execution for tool call ${toolCall.id}. Provide the URL of the first relevant picture found from your search for '${imageSearchQuery}'. If no relevant image is found, state 'No image found.'`
+                          // Updated simulation prompt with clear instructions for image URL
+                          content: `Simulated execution for tool call ${toolCall.id}. You searched for '${imageSearchQuery}' and found these results:
+
+1. Respond ONLY with the direct URL to the FIRST clear wine bottle image you found.
+2. The URL must end with .jpg, .jpeg, .png, .gif, or .webp (it may include query parameters after the extension).
+3. Make sure it's a complete and valid URL starting with http:// or https://
+4. Do not include any other text, explanations, or markdown.
+
+Example of good response: https://example.com/wine-image.jpg`
                       }
                   ];
                   try {
@@ -323,10 +330,33 @@ export default async function handler(
 
             // Extract URL from the final content 
             if (finalImageSearchContent && !finalImageSearchContent.toLowerCase().includes('no image found')) {
-                const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i;
-                const foundUrls = finalImageSearchContent.match(urlRegex);
-                if (foundUrls && foundUrls.length > 0) {
-                    imageUrl = foundUrls[0];
+                // First try to use the content directly if it's already a clean URL
+                if (finalImageSearchContent.trim().startsWith('http') && 
+                    /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(finalImageSearchContent.trim())) {
+                    imageUrl = finalImageSearchContent.trim();
+                    console.log(`[${requestId}] [${jobId}] Using direct URL response: ${imageUrl}`);
+                } else {
+                    // Otherwise use regex to extract URL
+                    // Improved regex pattern to better capture image URLs
+                    const urlRegex = /(https?:\/\/[^\s"'<>()]+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s"'<>()]*)?)/i;
+                    const foundUrls = finalImageSearchContent.match(urlRegex);
+                    if (foundUrls && foundUrls.length > 0) {
+                        imageUrl = foundUrls[0];
+                        // Log the extracted URL for debugging
+                        console.log(`[${requestId}] [${jobId}] Extracted image URL: ${imageUrl}`);
+                    } else {
+                        console.log(`[${requestId}] [${jobId}] No image URL found in content: ${finalImageSearchContent.substring(0, 200)}...`);
+                        
+                        // Additional fallback - try a more relaxed regex in case the URL format is unusual
+                        const relaxedUrlRegex = /(https?:\/\/\S+)/i;
+                        const relaxedUrls = finalImageSearchContent.match(relaxedUrlRegex);
+                        if (relaxedUrls && relaxedUrls.length > 0) {
+                            imageUrl = relaxedUrls[0];
+                            // Remove any trailing punctuation or text
+                            imageUrl = imageUrl.replace(/[,.;:)]$/, '');
+                            console.log(`[${requestId}] [${jobId}] Fallback URL extraction: ${imageUrl}`);
+                        }
+                    }
                 }
             }
 
