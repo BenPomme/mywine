@@ -204,8 +204,19 @@ export default async function handler(
           textSearchMessageObject = textSearchCompletion.choices[0]?.message;
           // Log the entire message object for debugging
           console.log(`[${requestId}] [${jobId}] Full text search message object for ${searchQueryBase}:`, JSON.stringify(textSearchMessageObject, null, 2));
-          webSearchTextContent = textSearchMessageObject?.content || 'No specific web results found.';
-          console.log(`[${requestId}] [${jobId}] Text web search response content for ${searchQueryBase}:`, webSearchTextContent);
+          
+          // Check content first, then tool_calls
+          if (textSearchMessageObject?.content) {
+              webSearchTextContent = textSearchMessageObject.content;
+          } else if (textSearchMessageObject?.tool_calls && textSearchMessageObject.tool_calls.length > 0) {
+              // Acknowledge tool use, but indicate results aren't directly available in this flow
+              webSearchTextContent = "Web search performed, but snippets require further processing."; 
+          } else {
+              // Default if neither content nor tool_calls are useful
+              webSearchTextContent = 'No specific web results found or tool use detected.';
+          }
+          
+          console.log(`[${requestId}] [${jobId}] Processed Text web search result for ${searchQueryBase}:`, webSearchTextContent);
         } catch(searchError) {
             console.error(`[${requestId}] [${jobId}] *** ERROR during text web search API call for ${searchQueryBase}: ***`, searchError);
             webSearchTextContent = 'Error during web search.';
@@ -249,15 +260,28 @@ export default async function handler(
 
             // Log the entire message object for debugging
             console.log(`[${requestId}] [${jobId}] Full image search message object for ${searchQueryBase}:`, JSON.stringify(imageSearchCompletion.choices[0]?.message, null, 2));
-            const imageSearchContent = imageSearchCompletion.choices[0]?.message?.content || '';
+            const imageSearchMessage = imageSearchCompletion.choices[0]?.message;
+            const imageSearchContent = imageSearchMessage?.content || '';
             console.log(`[${requestId}] [${jobId}] Image search response content for ${searchQueryBase}:`, imageSearchContent);
+            
+            // Reset imageUrl before checking
+            imageUrl = ''; 
+            
+            // Check content for URL first
             if (imageSearchContent && !imageSearchContent.toLowerCase().includes('no image found')) {
-                const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i; // Case insensitive
+                const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i;
                 const foundUrls = imageSearchContent.match(urlRegex);
                 if (foundUrls && foundUrls.length > 0) {
                     imageUrl = foundUrls[0];
                 }
+            } 
+            
+            // If no URL in content, check if tool was called (even if we can't get the result easily now)
+            if (!imageUrl && imageSearchMessage?.tool_calls && imageSearchMessage.tool_calls.length > 0) {
+                console.log(`[${requestId}] [${jobId}] Image search tool was called, but URL not found in direct content.`);
+                // imageUrl remains empty, indicating fallback needed or no image found via this flow
             }
+
         } catch (imageSearchError) {
             console.error(`[${requestId}] [${jobId}] Error during image web search for ${searchQueryBase}:`, imageSearchError);
         }
