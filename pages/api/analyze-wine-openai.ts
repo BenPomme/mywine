@@ -173,12 +173,65 @@ export default async function handler(
               content: `I need information about this wine: ${searchQuery}`
             }
           ],
-          tools: [{ type: "web_search" }]
+          tools: [{
+            type: "function",
+            function: {
+              name: "web_search",
+              description: "Search the web for information",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description: "The search query"
+                  }
+                },
+                required: ["query"]
+              }
+            }
+          }],
+          tool_choice: {
+            type: "function",
+            function: {
+              name: "web_search"
+            }
+          }
         });
 
         // Extract the web search results from the message
         const webSearchMessage = searchCompletion.choices[0]?.message;
         console.log(`[${requestId}] [${jobId}] Web search results received`);
+        
+        // Extract tool call results if present
+        let webSearchContent = '';
+        if (webSearchMessage?.tool_calls) {
+          // Handle the tool call response
+          const toolCall = webSearchMessage.tool_calls[0];
+          if (toolCall?.function?.name === 'web_search') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              if (args.query) {
+                // Get web search results with a second API call
+                const webSearchResponse = await fetch('https://api.openai.com/v1/assistants/api/web-search', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                  },
+                  body: JSON.stringify({ query: args.query })
+                });
+                
+                if (webSearchResponse.ok) {
+                  const searchData = await webSearchResponse.json();
+                  webSearchContent = searchData.text || '';
+                  console.log(`[${requestId}] [${jobId}] Web search content: ${webSearchContent.substring(0, 100)}...`);
+                }
+              }
+            } catch (error) {
+              console.error(`[${requestId}] [${jobId}] Error processing web search:`, error);
+            }
+          }
+        }
 
         // Second call: Generate complete review based on search results
         const reviewCompletion = await openai.chat.completions.create({
@@ -191,10 +244,8 @@ export default async function handler(
             // Include the initial wine data
             {
               role: "user", 
-              content: `Create a detailed review for this wine:\n- Producer: ${wine.producer}\n- Name: ${wine.name}\n- Vintage: ${wine.vintage}\n- Region: ${wine.region}\n- Grape Varieties: ${wine.grapeVarieties}`
-            },
-            // Include the web search results
-            webSearchMessage,
+              content: `Create a detailed review for this wine:\n- Producer: ${wine.producer}\n- Name: ${wine.name}\n- Vintage: ${wine.vintage}\n- Region: ${wine.region}\n- Grape Varieties: ${wine.grapeVarieties}\n\nHere's what I found about this wine online: ${webSearchContent}`
+            }
           ]
         });
         
@@ -211,20 +262,81 @@ export default async function handler(
               content: `Find an image of this wine bottle: ${searchQuery}`
             }
           ],
-          tools: [{ type: "web_search" }]
+          tools: [{
+            type: "function",
+            function: {
+              name: "web_search",
+              description: "Search the web for images",
+              parameters: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description: "The search query"
+                  }
+                },
+                required: ["query"]
+              }
+            }
+          }],
+          tool_choice: {
+            type: "function",
+            function: {
+              name: "web_search"
+            }
+          }
         });
         
         // Extract image URL from the message content
         const imageSearchMessage = imageSearchCompletion.choices[0]?.message;
-        const imageSearchContent = imageSearchMessage?.content || '';
-        console.log(`[${requestId}] [${jobId}] Image search content: ${imageSearchContent.substring(0, 100)}...`);
+        let imageUrl = '';
         
-        // Parse the message content to find image URLs
-        const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
-        const imageUrls = imageSearchContent.match(urlRegex);
-        const imageUrl = imageUrls ? imageUrls[0] : '';
+        // Process tool calls for image search
+        if (imageSearchMessage?.tool_calls) {
+          const toolCall = imageSearchMessage.tool_calls[0];
+          if (toolCall?.function?.name === 'web_search') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              if (args.query) {
+                // Get image search results with a second API call
+                const imageSearchResponse = await fetch('https://api.openai.com/v1/assistants/api/web-search', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                  },
+                  body: JSON.stringify({ 
+                    query: args.query,
+                    type: 'image'
+                  })
+                });
+                
+                if (imageSearchResponse.ok) {
+                  const searchData = await imageSearchResponse.json();
+                  if (searchData.images && searchData.images.length > 0) {
+                    imageUrl = searchData.images[0].url || '';
+                    console.log(`[${requestId}] [${jobId}] Found image URL: ${imageUrl}`);
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`[${requestId}] [${jobId}] Error processing image search:`, error);
+            }
+          }
+        }
         
-        console.log(`[${requestId}] [${jobId}] Found image URL: ${imageUrl}`);
+        if (!imageUrl) {
+          // Fallback if no image found through tool call
+          const imageSearchContent = imageSearchMessage?.content || '';
+          console.log(`[${requestId}] [${jobId}] Image search content: ${imageSearchContent.substring(0, 100)}...`);
+          
+          // Parse the message content to find image URLs
+          const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
+          const imageUrls = imageSearchContent.match(urlRegex);
+          imageUrl = imageUrls ? imageUrls[0] : '';
+          
+          console.log(`[${requestId}] [${jobId}] Found image URL (fallback): ${imageUrl}`);
+        }
         
         return {
           ...wine,
