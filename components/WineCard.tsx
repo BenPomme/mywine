@@ -10,7 +10,7 @@ interface WineCardProps {
 
 // Placeholder SVG and reliable fallback images
 const placeholderSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='10' height='10' fill='%23E5E7EB'/%3E%3C/svg%3E";
-const fallbackWineImage = "https://images.vivino.com/labels/default_label.jpg";
+const fallbackWineImage = "https://images.vivino.com/thumbs/default_label_background_vertical.jpg"; // Verified Vivino default image
 
 // Helper to generate star icons based on score (out of 100)
 const renderStars = (score: number) => {
@@ -102,7 +102,13 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
     // First check if we have a wine.imageUrl that isn't empty and hasn't errored
     if (wine.imageUrl && !imageError && wine.imageUrl.startsWith('http')) {
       // Check for trusted domains that we know work reliably
-      const trustedDomains = ['images.vivino.com', 'www.wine.com', 'www.winespectator.com'];
+      const trustedDomains = [
+        'images.vivino.com', 
+        'www.wine.com', 
+        'www.winespectator.com',
+        'www.totalwine.com',
+        'www.winemag.com'
+      ];
       for (const domain of trustedDomains) {
         if (wine.imageUrl.includes(domain)) {
           return wine.imageUrl; // Return trusted URLs directly

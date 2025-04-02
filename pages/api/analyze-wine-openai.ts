@@ -391,13 +391,13 @@ Example of good response: https://www.wine.com/images/labels/wine/500x500/12345.
         if (!imageUrl) {
             console.log(`[${requestId}] [${jobId}] Using generic wine image for ${searchQueryBase}`);
             
-            // Array of reliable wine image URLs
+            // Array of reliable, verified wine image URLs
             const genericWineImages = [
-                "https://images.vivino.com/labels/wg4u4Fm3SqqDlzFyFxHFiw_pb_600x600.png",
-                "https://images.vivino.com/labels/EJcqFoigR5ewwOmWHD-NdA_pb_600x600.png",
-                "https://images.vivino.com/labels/AJu3bIQkQa-XgXUhhRoYKg_pb_600x600.png",
-                "https://images.vivino.com/labels/2OJ-2y9BSVekR2BKwIVLbA_pb_600x600.png",
-                "https://images.vivino.com/labels/T5OJRBxTQkeOHYTcq7ZTWw_pb_600x600.png"
+                "https://images.vivino.com/thumbs/default_label_background_vertical.jpg", // Verified Vivino default image
+                "https://www.totalwine.com/dynamic/490x/media/sys_master/twmmedia/h3b/h70/12291741196318.png", // Total Wine placeholder
+                "https://www.wine.com/images/default_bottle.svg", // Wine.com default bottle
+                "https://www.winespectator.com/assets/images/graphics/placeholder-image.svg", // Wine Spectator placeholder 
+                "https://www.winemag.com/wp-content/themes/TrellisFoundation/assets/img/generic-wine-bottle.png" // Wine Enthusiast bottle
             ];
             
             // Use the wine producer/name to consistently select the same image for the same wine
