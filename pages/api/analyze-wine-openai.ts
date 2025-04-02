@@ -161,83 +161,133 @@ export default async function handler(
     // Search for wine images and generate reviews using OpenAI's web search
     const winesWithImages = await Promise.all(wineDataArray.map(async (wine) => {
       try {
-        const searchQuery = `${wine.producer} ${wine.name} ${wine.vintage}`;
-        console.log(`[${requestId}] [${jobId}] Starting web search and review generation for: ${searchQuery}`);
+        const searchQueryBase = `${wine.producer} ${wine.name} ${wine.vintage}`;
+        console.log(`[${requestId}] [${jobId}] Starting web search/review/image process for: ${searchQueryBase}`);
         
-        // Step 1: Use GPT-4 with web search to find reviews, ratings, and image URL
-        console.log(`[${requestId}] [${jobId}] Performing web search for: ${searchQuery}`);
-        const searchCompletion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: "You are a helpful assistant. Search the web for information about the specified wine. Provide a summary of professional reviews, ratings, and tasting notes found online. Critically, also find and include a direct URL to an image of the wine bottle in your response text."
-            },
-            {
-              role: "user",
-              content: `Search for detailed information and an image URL for this wine: ${searchQuery} (Producer: ${wine.producer}, Name: ${wine.name}, Vintage: ${wine.vintage})`
-            }
-          ],
-          tools: [
-            {
-              type: "function",
-              function: {
-                name: "web_search",
-                description: "Search the web for wine information, reviews, ratings, and images",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    query: {
-                      type: "string",
-                      description: "Optimized search query for wine information, reviews, ratings, and images"
-                    }
-                  },
-                  required: ["query"]
+        // Step 1: Use Web Search for Textual Info (Reviews, Ratings)
+        const textSearchQuery = `${searchQueryBase} wine reviews ratings tasting notes`;
+        console.log(`[${requestId}] [${jobId}] Performing text web search for: ${textSearchQuery}`);
+        let webSearchTextContent = '';
+        try {
+          const textSearchCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "system",
+                content: "You are a helpful assistant. Search the web for professional reviews, ratings, and tasting notes for the specified wine. Summarize your findings concisely. If no information is found, state that clearly."
+              },
+              {
+                role: "user",
+                content: `Find and summarize web information for: ${textSearchQuery}`
+              }
+            ],
+            tools: [
+              {
+                type: "function",
+                function: {
+                  name: "web_search",
+                  description: "Search the web for wine reviews, ratings, and tasting notes",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      query: { type: "string", description: "Search query for wine reviews/ratings" }
+                    },
+                    required: ["query"]
+                  }
                 }
               }
+            ],
+            tool_choice: "auto"
+          });
+          webSearchTextContent = textSearchCompletion.choices[0]?.message?.content || 'No specific web results found.';
+          console.log(`[${requestId}] [${jobId}] Text web search response content for ${searchQueryBase}:`, webSearchTextContent);
+        } catch(searchError) {
+            console.error(`[${requestId}] [${jobId}] Error during text web search for ${searchQueryBase}:`, searchError);
+            webSearchTextContent = 'Error during web search.';
+        }
+
+        // Step 2: Use Web Search Specifically for Image URL
+        const imageSearchQuery = `${searchQueryBase} wine bottle image`;
+        console.log(`[${requestId}] [${jobId}] Performing image web search for: ${imageSearchQuery}`);
+        let imageUrl = '';
+        try {
+            const imageSearchCompletion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                {
+                    role: "system",
+                    content: "You are an image finding assistant. Search the web and provide ONLY the direct URL to a relevant image of the specified wine bottle. If no specific image is found, respond with only the text 'No image found.'."
+                },
+                {
+                    role: "user",
+                    content: `Find an image URL for: ${imageSearchQuery}`
+                }
+                ],
+                tools: [
+                {
+                    type: "function",
+                    function: {
+                    name: "web_search",
+                    description: "Search the web for wine bottle images",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                        query: { type: "string", description: "Search query for wine bottle images" }
+                        },
+                        required: ["query"]
+                    }
+                    }
+                }
+                ],
+                tool_choice: "auto"
+            });
+
+            const imageSearchContent = imageSearchCompletion.choices[0]?.message?.content || '';
+            console.log(`[${requestId}] [${jobId}] Image search response content for ${searchQueryBase}:`, imageSearchContent);
+            if (imageSearchContent && !imageSearchContent.toLowerCase().includes('no image found')) {
+                const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i; // Case insensitive
+                const foundUrls = imageSearchContent.match(urlRegex);
+                if (foundUrls && foundUrls.length > 0) {
+                    imageUrl = foundUrls[0];
+                }
             }
-          ],
-          tool_choice: "auto" // Let the model decide when to use the tool
-        });
+        } catch (imageSearchError) {
+            console.error(`[${requestId}] [${jobId}] Error during image web search for ${searchQueryBase}:`, imageSearchError);
+        }
+        console.log(`[${requestId}] [${jobId}] Final Extracted image URL for ${searchQueryBase}: ${imageUrl}`);
 
-        const searchMessage = searchCompletion.choices[0]?.message;
-        const webSearchResultsContent = searchMessage?.content || '';
-        console.log(`[${requestId}] [${jobId}] Web search response content for ${searchQuery}:`, webSearchResultsContent);
-
-        // Step 2: Extract image URL from the response content
-        const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
-        const imageUrls = webSearchResultsContent.match(urlRegex);
-        const imageUrl = imageUrls ? imageUrls[0] : '';
-        console.log(`[${requestId}] [${jobId}] Extracted image URL for ${searchQuery}: ${imageUrl}`);
-
-        // Step 3: Generate a final, comprehensive review using initial analysis + web results
-        console.log(`[${requestId}] [${jobId}] Generating final review for: ${searchQuery}`);
-        const reviewCompletion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: "You are a professional wine critic. Synthesize the provided initial analysis and the web search findings into a single, comprehensive, and engaging review. Include tasting notes, food pairings, rating/score, and overall impression. If the web search didn't provide much, rely more on the initial analysis."
-            },
-            {
-              role: "user",
-              content: `Create a final review combining these details for ${wine.producer} ${wine.name} ${wine.vintage}:\n\n== Initial Analysis (from image) ==\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\nRegion: ${wine.region}\nGrape Varieties: ${wine.grapeVarieties}\nTasting Notes: ${wine.tastingNotes}\nScore: ${wine.score}\nPrice: ${wine.price}\n\n== Web Search Findings ==\n${webSearchResultsContent}`
-            }
-          ]
-        });
-
-        const finalReview = reviewCompletion.choices[0]?.message?.content || wine.tastingNotes;
-        console.log(`[${requestId}] [${jobId}] Generated final review for ${searchQuery}:`, finalReview);
+        // Step 3: Generate final review using initial analysis + text web results
+        console.log(`[${requestId}] [${jobId}] Generating final review for: ${searchQueryBase}`);
+        let finalReview = wine.tastingNotes; // Default to original notes
+        try {
+            const reviewCompletion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                {
+                    role: "system",
+                    content: "You are a professional wine critic. Synthesize the provided initial analysis and the web search findings into a single, comprehensive, and engaging review. Include tasting notes, food pairings, rating/score (if available), and overall impression. Rely more on the initial analysis if web search findings are scarce or state that explicitly."
+                },
+                {
+                    role: "user",
+                    content: `Create a final review combining these details for ${searchQueryBase}:\n\n== Initial Analysis (from image) ==\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\nRegion: ${wine.region}\nGrape Varieties: ${wine.grapeVarieties}\nTasting Notes: ${wine.tastingNotes}\nScore: ${wine.score}\nPrice: ${wine.price}\n\n== Web Search Findings (Text) ==\n${webSearchTextContent}`
+                }
+                ]
+            });
+            finalReview = reviewCompletion.choices[0]?.message?.content || finalReview;
+            console.log(`[${requestId}] [${jobId}] Generated final review for ${searchQueryBase}:`, finalReview);
+        } catch (reviewError) {
+            console.error(`[${requestId}] [${jobId}] Error during final review generation for ${searchQueryBase}:`, reviewError);
+        }
         
-        // Step 4: Return the combined data
+        // Step 4: Return combined data
         return {
           ...wine,
-          tastingNotes: finalReview, // Update with the synthesized review
+          tastingNotes: finalReview,
           imageUrl: imageUrl || wine.imageUrl // Use found image URL, fallback to original if any
         };
       } catch (error) {
-        console.error(`[${requestId}] [${jobId}] Error processing web search/review for ${wine.name}:`, error);
-        // Return the original wine data if this step fails
+        // Catch errors in the overall wine processing block
+        console.error(`[${requestId}] [${jobId}] Major error processing wine ${wine.producer} ${wine.name}:`, error);
         return wine; 
       }
     }));
