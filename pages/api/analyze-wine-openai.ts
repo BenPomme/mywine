@@ -217,7 +217,6 @@ export default async function handler(
               ...textSearchAssistantMessage.tool_calls.map(tc => ({ 
                 tool_call_id: tc.id,
                 role: "tool" as const,
-                name: tc.function.name,
                 content: `Simulated execution for tool call ${tc.id} with args ${tc.function.arguments}. Provide the raw text snippets found from Vivino/Decanter/Wine-Searcher, each on a new line with source, or state 'No snippets found'.`
               }))
             ];
@@ -296,7 +295,6 @@ export default async function handler(
                   {
                       tool_call_id: toolCall.id,
                       role: "tool" as const,
-                      name: toolCall.function.name,
                       content: `Simulated execution for tool call ${toolCall.id} with args ${toolCall.function.arguments}. Provide ONLY the single best image URL found on Google Images, or state 'No image found'.`
                   }
               ];
@@ -339,7 +337,11 @@ export default async function handler(
         const reviewMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             {
                 role: "system",
-                content: "You are a professional wine critic. Synthesize the provided initial analysis and the web search snippets into TWO distinct outputs:\n1. A concise final review (max 2 sentences).\n2. A numerical score (1-100) based on all available information. Incorporate details from web snippets if provided, otherwise rely on the initial analysis.\n\nRespond ONLY with a JSON object containing 'review' and 'score' keys, like this:\n{"review": "[Your 1-2 sentence review here]...", "score": [number 1-100]}"
+                content: `You are a professional wine critic. Synthesize the provided initial analysis and the web search snippets into TWO distinct outputs:
+1. A concise final review (max 2 sentences).
+2. A numerical score (1-100) based on all available information.
+
+Respond ONLY with a JSON object containing 'review' (string) and 'score' (number) keys.`
             },
             {
                 role: "user",
