@@ -55,26 +55,79 @@ const parseWebSnippets = (snippetsText: string): { source: string, snippet: stri
     // Split by newline and filter out empty/short lines
     const lines = trimmedText.split('\n').filter(line => line.trim().length > 5);
     
-    return lines.map((line, index) => {
-        let source = `Web Snippet ${index + 1}`; // Default source
-        let snippet = line.trim();
-
-        // Try to extract source if mentioned (e.g., "Source: Vivino - ..." or "Vivino: ...")
-        const sourceMatch = snippet.match(/^(?:Source:|From|Vivino|Decanter|Wine-Searcher)[:\s-]+(.+)/i);
-        if (sourceMatch && sourceMatch[1]) {
-            // Try to identify the source name more reliably
-            const potentialSource = snippet.substring(0, sourceMatch.index || 0).trim().replace(/[:\s-]+$/, '');
-            if (potentialSource.length > 2) { // Avoid grabbing just punctuation
-                source = potentialSource;
-            }
-            snippet = sourceMatch[1].trim(); // The rest is the snippet
+    const snippets: { source: string, snippet: string }[] = [];
+    
+    // Process each line
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Skip introductory lines that aren't actual reviews
+        if (line.toLowerCase().includes('here are some review snippets for') || 
+            line.match(/^Source: Web Snippet \d+$/) || 
+            line.trim().length < 10) {
+            continue;
         }
         
-        // Remove leading/trailing quotes if present
-        snippet = snippet.replace(/^["'\s]+|["'\s]+$/g, '');
-
-        return { source, snippet };
-    });
+        // Extract source and snippet
+        let source = '';
+        let snippet = line;
+        
+        // Try to extract numbered review format (e.g., "1. Source: Wine Advocate - "Text")
+        const numberedMatch = line.match(/^\d+\.\s+Source:\s+([^-]+)\s+-\s+"(.+)"$/);
+        if (numberedMatch) {
+            source = numberedMatch[1].trim();
+            snippet = numberedMatch[2].trim();
+            snippets.push({ source, snippet });
+            continue;
+        }
+        
+        // Try to extract direct source format (e.g., "Source: Wine Advocate - "Text")
+        const sourceMatch = line.match(/^Source:\s+([^-]+)\s+-\s+"(.+)"$/);
+        if (sourceMatch) {
+            source = sourceMatch[1].trim();
+            snippet = sourceMatch[2].trim();
+            snippets.push({ source, snippet });
+            continue;
+        }
+        
+        // Try to extract simple numbered format (e.g., "1. Source: Wine Advocate...")
+        const simpleNumberedMatch = line.match(/^\d+\.\s+Source:\s+([^-:]+)[:|\s](.+)$/);
+        if (simpleNumberedMatch) {
+            source = simpleNumberedMatch[1].trim();
+            snippet = simpleNumberedMatch[2].trim();
+            snippets.push({ source, snippet });
+            continue;
+        }
+        
+        // Standard format Source: X - Text
+        const standardSourceMatch = line.match(/Source:\s+([^-:]+)[:|\s-]+(.+)/i);
+        if (standardSourceMatch) {
+            source = standardSourceMatch[1].trim();
+            snippet = standardSourceMatch[2].trim();
+            snippets.push({ source, snippet });
+            continue;
+        }
+        
+        // If no specific pattern matched but has "Source:" somewhere in it
+        const genericSourceMatch = line.match(/Source:\s+(.+)/i);
+        if (genericSourceMatch && !line.includes('Web Snippet')) {
+            snippets.push({ 
+                source: 'Review',
+                snippet: line.trim()
+            });
+            continue;
+        }
+        
+        // Default case - if we couldn't parse it but it's a substantial line
+        if (line.length > 20 && !line.includes('Web Snippet')) {
+            snippets.push({
+                source: 'Review',
+                snippet: line.trim()
+            });
+        }
+    }
+    
+    return snippets;
 };
 
 // Function to extract flavor profile tags from tasting notes and wine details
@@ -180,7 +233,7 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured, onTagClick }) => 
               onClick={() => setShowSnippets(!showSnippets)}
               className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
             >
-              {showSnippets ? 'Hide' : 'Show'} Web Snippets
+              {showSnippets ? 'Hide' : 'Show'} Other Reviews
               <svg className={`ml-1 w-4 h-4 transform ${showSnippets ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
             </button>
             {showSnippets && (
