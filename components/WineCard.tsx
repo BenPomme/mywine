@@ -33,25 +33,9 @@ const renderStars = (score: number) => {
   return stars;
 };
 
-// Helper to try and extract snippets from raw web search results
-const parseWebResults = (results: string): { source: string, snippet: string }[] => {
-    if (!results || results === 'No specific web results found.' || results === 'Error during web search.') {
-        return [];
-    }
-    // Basic heuristic: Look for lines that might be quotes or summaries
-    // This is very basic and might need significant improvement based on actual API output
-    const lines = results.split('\n').filter(line => line.trim().length > 10); // Filter short lines
-    return lines.slice(0, 5).map((line, index) => ({
-        source: `Web Snippet ${index + 1}`, // Placeholder source
-        snippet: line.trim()
-    }));
-};
-
 const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [showWebResults, setShowWebResults] = useState(false);
-  const webSnippets = parseWebResults(wine.webSearchResults || '');
 
   // Handle user rating change
   const handleRatingChange = (rating: number) => {
@@ -71,126 +55,54 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
   };
 
   return (
-    <div className={`wine-card ${isFeatured ? 'p-6' : 'p-4'} glass-effect rounded-xl`}>
-      <div className="flex flex-col md:flex-row gap-4">
-        {/* Wine Image */}
-        <div className={`relative ${isFeatured ? 'w-48 h-48' : 'w-32 h-32'} flex-shrink-0 bg-gray-50 rounded-lg overflow-hidden`}>
-          <img
-            src={getImageUrl()}
-            alt={wine.name}
-            className="w-full h-full object-contain rounded-lg"
-            onError={handleImageError}
+    <div className={`bg-white shadow-md rounded-lg overflow-hidden ${isFeatured ? 'border-2 border-indigo-500' : ''}`}>
+      <div className="md:flex">
+        {/* Image Section */}
+        <div className="md:flex-shrink-0 p-4 flex items-center justify-center md:w-1/3">
+          <img 
+            className="h-48 w-full object-contain md:h-full md:w-48" 
+            src={wine.imageUrl || 'data:image/svg+xml;base64,...'} // Use found image, fallback
+            alt={`${wine.winery} ${wine.name}`}
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.onerror = null; 
+              target.src = 'data:image/svg+xml;base64,...'; 
+            }}
           />
         </div>
 
-        {/* Wine Details */}
-        <div className="flex-1">
+        {/* Details Section */}
+        <div className="p-6 flex-grow">
           <div className="flex justify-between items-start mb-2">
-            <h3 className={`font-bold ${isFeatured ? 'text-xl' : 'text-lg'} text-background-dark`}>
-              {wine.name}
-            </h3>
-            <div className="flex items-center space-x-1">
-              <span className="text-primary font-semibold">{wine.rating?.score ?? 0}%</span>
-              <span className="text-secondary text-sm">({wine.rating?.source || '-'})</span>
-            </div>
-          </div>
-
-          {/* Wine Pills */}
-          <div className="flex flex-wrap gap-2 mb-3">
-            {wine.year && (
-              <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">
-                {wine.year}
-              </span>
-            )}
-            {wine.region && (
-              <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">
-                {wine.region}
-              </span>
-            )}
-            {wine.grapeVariety && (
-              <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">
-                {wine.grapeVariety}
-              </span>
-            )}
-            {wine.type && (
-              <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm">
-                {wine.type}
-              </span>
-            )}
-          </div>
-
-          {/* Rating Stars */}
-          <div className="flex items-center mb-3">
-            <RatingStars rating={wine.rating?.score ?? 0} size="md" />
-          </div>
-
-          {/* AI Summary */}
-          {wine.aiSummary && (
-            <div className="mb-4">
-              <p className="text-background-dark italic">
-                "{wine.aiSummary}"
+            <div>
+              <div className="uppercase tracking-wide text-sm text-indigo-600 font-semibold">
+                {wine.winery || 'Unknown Winery'}
+              </div>
+              <h2 className="block mt-1 text-lg leading-tight font-medium text-black">
+                {wine.name || 'Unknown Wine'}
+              </h2>
+              <p className="mt-1 text-gray-500 text-sm">
+                {wine.year} {wine.region ? `· ${wine.region}` : ''} {wine.grapeVariety ? `· ${wine.grapeVariety}` : ''}
               </p>
             </div>
-          )}
-
-          {/* Reviews Section */}
-          {(wine.rating?.review || (wine.additionalReviews && wine.additionalReviews.length > 0)) && (
-            <div className="space-y-3">
-              {/* Main Review */}
-              {wine.rating?.review && (
-                <div className="bg-white/50 rounded-lg p-3">
-                  <p className="text-sm text-secondary">{wine.rating?.review}</p>
-                </div>
-              )}
-
-              {/* Additional Reviews */}
-              {wine.additionalReviews && wine.additionalReviews.length > 0 && (
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className="text-primary text-sm font-medium hover:text-primary-light transition-colors"
-                  >
-                    {isExpanded ? 'Hide Reviews' : `Show ${wine.additionalReviews.length} More Reviews`}
-                  </button>
-                  {isExpanded && (
-                    <div className="space-y-2">
-                      {wine.additionalReviews.map((review, index) => (
-                        <div key={index} className="bg-white/50 rounded-lg p-3">
-                          <p className="text-sm text-secondary">
-                            {typeof review === 'string' ? review : review.review || review.text || ''}
-                          </p>
-                          {typeof review === 'object' && review.source && (
-                            <p className="text-xs text-secondary mt-1">Source: {review.source}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="text-right ml-4 flex-shrink-0">
+              <span className="text-xl font-bold text-gray-900">
+                {wine.score ? `${wine.score}` : 'N/A'}<span className="text-sm font-normal text-gray-500">/100</span>
+              </span>
+              <div className="mt-1 flex items-center justify-end">
+                 {renderStars(wine.score || 0)} 
+              </div>
+               <p className="text-xs text-gray-500 mt-1">(AI Analysis)</p> 
             </div>
-          )}
-
-          {/* Collapsible Web Search Results Section */}
-          {webSnippets.length > 0 && (
+          </div>
+          
+          {/* AI Review Section */}
+          {wine.summary && (
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <button 
-                onClick={() => setShowWebResults(!showWebResults)}
-                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
-              >
-                {showWebResults ? 'Hide' : 'Show'} Web Search Snippets
-                <svg className={`ml-1 w-4 h-4 transform ${showWebResults ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-              </button>
-              {showWebResults && (
-                <div className="mt-2 space-y-2">
-                  {webSnippets.map((snippet, index) => (
-                    <div key={index} className="p-2 bg-gray-50 rounded">
-                      <p className="text-xs text-gray-500 mb-1">Source: {snippet.source}</p>
-                      <p className="text-sm text-gray-700">"{snippet.snippet}"</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <h3 className="text-md font-semibold text-gray-700 mb-2">AI Review</h3>
+              <p className="text-gray-600 text-sm">
+                {wine.summary} 
+              </p>
             </div>
           )}
         </div>

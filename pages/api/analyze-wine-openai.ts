@@ -167,8 +167,9 @@ export default async function handler(
         // Step 1: Use Web Search for Textual Info (Reviews, Ratings)
         const textSearchQuery = `${searchQueryBase} wine reviews ratings tasting notes vivino decanter wine-searcher`;
         console.log(`[${requestId}] [${jobId}] Performing targeted text web search for: ${textSearchQuery}`);
-        let webSearchTextContent = 'No specific web results found.'; // Default value
-        let textSearchMessageObject = null; // Variable to hold the message object
+        let textSearchAssistantMessage: OpenAI.Chat.Completions.ChatCompletionMessage | null = null; // Store the whole assistant message
+        let webSearchTextOutputForReview = "No specific web results found."; // For logging/fallback
+        
         try {
           const textSearchCompletion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -200,26 +201,24 @@ export default async function handler(
             ],
             tool_choice: "auto"
           });
-          // Store the message object before logging
-          textSearchMessageObject = textSearchCompletion.choices[0]?.message;
-          // Log the entire message object for debugging
-          console.log(`[${requestId}] [${jobId}] Full text search message object for ${searchQueryBase}:`, JSON.stringify(textSearchMessageObject, null, 2));
           
-          // Check content first, then tool_calls
-          if (textSearchMessageObject?.content) {
-              webSearchTextContent = textSearchMessageObject.content;
-          } else if (textSearchMessageObject?.tool_calls && textSearchMessageObject.tool_calls.length > 0) {
-              // Acknowledge tool use, but indicate results aren't directly available in this flow
-              webSearchTextContent = "Web search performed, but snippets require further processing."; 
+          // Store the entire assistant message
+          textSearchAssistantMessage = textSearchCompletion.choices[0]?.message;
+          console.log(`[${requestId}] [${jobId}] Full text search assistant message object for ${searchQueryBase}:`, JSON.stringify(textSearchAssistantMessage, null, 2));
+          
+          // Update the fallback text based on what the message contains
+          if (textSearchAssistantMessage?.content) {
+              webSearchTextOutputForReview = textSearchAssistantMessage.content; // Use content if available
+          } else if (textSearchAssistantMessage?.tool_calls && textSearchAssistantMessage.tool_calls.length > 0) {
+              webSearchTextOutputForReview = "Web search initiated."; // Indicate search happened
           } else {
-              // Default if neither content nor tool_calls are useful
-              webSearchTextContent = 'No specific web results found or tool use detected.';
+              webSearchTextOutputForReview = 'No specific web results found or tool use detected.';
           }
-          
-          console.log(`[${requestId}] [${jobId}] Processed Text web search result for ${searchQueryBase}:`, webSearchTextContent);
+          console.log(`[${requestId}] [${jobId}] Outcome of Text web search step for ${searchQueryBase}:`, webSearchTextOutputForReview);
+
         } catch(searchError) {
             console.error(`[${requestId}] [${jobId}] *** ERROR during text web search API call for ${searchQueryBase}: ***`, searchError);
-            webSearchTextContent = 'Error during web search.';
+            webSearchTextOutputForReview = 'Error during web search.';
         }
 
         // Step 2: Use Web Search Specifically for Image URL from Google Images
@@ -264,10 +263,7 @@ export default async function handler(
             const imageSearchContent = imageSearchMessage?.content || '';
             console.log(`[${requestId}] [${jobId}] Image search response content for ${searchQueryBase}:`, imageSearchContent);
             
-            // Reset imageUrl before checking
             imageUrl = ''; 
-            
-            // Check content for URL first
             if (imageSearchContent && !imageSearchContent.toLowerCase().includes('no image found')) {
                 const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/i;
                 const foundUrls = imageSearchContent.match(urlRegex);
@@ -275,11 +271,8 @@ export default async function handler(
                     imageUrl = foundUrls[0];
                 }
             } 
-            
-            // If no URL in content, check if tool was called (even if we can't get the result easily now)
             if (!imageUrl && imageSearchMessage?.tool_calls && imageSearchMessage.tool_calls.length > 0) {
                 console.log(`[${requestId}] [${jobId}] Image search tool was called, but URL not found in direct content.`);
-                // imageUrl remains empty, indicating fallback needed or no image found via this flow
             }
 
         } catch (imageSearchError) {
@@ -287,24 +280,42 @@ export default async function handler(
         }
         console.log(`[${requestId}] [${jobId}] Final Extracted image URL for ${searchQueryBase}: ${imageUrl}`);
 
-        // Step 3: Generate final review and rating
+        // Step 3: Generate final review and rating, passing the text search assistant message
         console.log(`[${requestId}] [${jobId}] Generating final review and rating for: ${searchQueryBase}`);
-        let finalReview = wine.tastingNotes; // Default to original notes
-        let finalScore = wine.score || 0; // Default to original score
+        let finalReview = wine.tastingNotes;
+        let finalScore = wine.score || 0;
+        
+        // Construct messages for the final review call
+        const reviewMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            {
+                role: "system",
+                content: "You are a professional wine critic. Synthesize the provided initial analysis and any relevant information obtained from previous web search tool calls into TWO distinct outputs:\n1. A concise final review (max 2 sentences).\n2. A numerical score (1-100) based on all available information. If previous steps indicated web results were found, incorporate them; otherwise, rely on the initial analysis.\n\nRespond ONLY with a JSON object containing 'review' and 'score' keys, like this:\n{\"review\": \"[Your 1-2 sentence review here]...\", \"score\": [number 1-100]}"
+            },
+            {
+                role: "user",
+                content: `Create the JSON output (review and score) for ${searchQueryBase}:\n\n== Initial Analysis (from image) ==\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\nRegion: ${wine.region}\nGrape Varieties: ${wine.grapeVarieties}\nTasting Notes: ${wine.tastingNotes}\nScore: ${wine.score}\nPrice: ${wine.price}`
+            }
+        ];
+
+        // Add the assistant's message from the text search step if it exists and used tools
+        if (textSearchAssistantMessage && textSearchAssistantMessage.tool_calls && textSearchAssistantMessage.tool_calls.length > 0) {
+            reviewMessages.push(textSearchAssistantMessage);
+             // Optionally, add a placeholder user message if needed after tool calls, 
+             // but often the model can synthesize directly from the previous assistant message.
+             console.log(`[${requestId}] [${jobId}] Adding text search assistant message with tool calls to final review context.`);
+        } else {
+            // If no tool call, add the text content we got as context
+             reviewMessages.push({
+                role: "user", // Or system? Treat it as context provided *to* the critic AI.
+                content: `\n== Web Search Findings (Text) ==\n${webSearchTextOutputForReview}`
+             });
+              console.log(`[${requestId}] [${jobId}] Adding text search fallback content to final review context.`);
+        }
+        
         try {
             const reviewCompletion = await openai.chat.completions.create({
                 model: "gpt-4o",
-                messages: [
-                {
-                    role: "system",
-                    content: "You are a professional wine critic. Synthesize the provided initial analysis and the web search findings into TWO distinct outputs:\n1. A concise final review (max 2 sentences).\n2. A numerical score (1-100) based on all available information (initial analysis and web findings). If a score is provided in the web findings or initial analysis, lean towards that, otherwise estimate based on descriptions.\n\nRespond ONLY with a JSON object containing 'review' and 'score' keys, like this:\n{\"review\": \"[Your 1-2 sentence review here]...\", \"score\": [number 1-100]}"
-                },
-                {
-                    role: "user",
-                    content: `Create the JSON output (review and score) for ${searchQueryBase}:\n\n== Initial Analysis (from image) ==\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\nRegion: ${wine.region}\nGrape Varieties: ${wine.grapeVarieties}\nTasting Notes: ${wine.tastingNotes}\nScore: ${wine.score}\nPrice: ${wine.price}\n\n== Web Search Findings (Text) ==\n${webSearchTextContent}`
-                }
-                ],
-                // Ensure response is JSON
+                messages: reviewMessages, 
                 response_format: { type: "json_object" } 
             });
 
@@ -319,21 +330,20 @@ export default async function handler(
                     console.log(`[${requestId}] [${jobId}] Parsed score: ${finalScore}`);
                 } catch (parseError) {
                     console.error(`[${requestId}] [${jobId}] Failed to parse review/score JSON:`, parseError, reviewContent);
-                    // Attempt to extract review from raw content if JSON fails
-                    finalReview = reviewContent.substring(0, 200); // Fallback to raw content snippet
+                    finalReview = reviewContent.substring(0, 200); 
                 }
             }
         } catch (reviewError) {
             console.error(`[${requestId}] [${jobId}] Error during final review/score generation for ${searchQueryBase}:`, reviewError);
         }
         
-        // Step 4: Return combined data
+        // Step 4: Return combined data (No webSearchResults field anymore)
         return {
           ...wine,
-          tastingNotes: finalReview, // This now holds the CONCISE review
-          score: finalScore, // The generated/validated score
-          imageUrl: imageUrl || wine.imageUrl, // Use found image URL, fallback to original if any
-          webSearchResults: webSearchTextContent // Pass raw web search results for frontend snippets
+          tastingNotes: finalReview,
+          score: finalScore,
+          imageUrl: imageUrl || wine.imageUrl
+          // webSearchResults: webSearchTextContent // REMOVED
         };
       } catch (error) {
         // Catch errors in the overall wine processing block

@@ -57,19 +57,16 @@ export default function Home() {
                     region: wineData.region || '',
                     grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
                     type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', // Web search image URL
+                    imageUrl: wineData.imageUrl || '', 
                     uploadedImageUrl: uploadedImageUrl,
-                    score: wineData.score || 0, // Use the score from API
-                    summary: wineData.tastingNotes || '', // This is now the concise review
-                    // Remove aiSummary as it's redundant now
-                    // aiSummary: wineData.tastingNotes || '',
-                    webSearchResults: wineData.webSearchResults || 'No web results available.', // Map the raw web results
+                    score: wineData.score || 0,
+                    summary: wineData.tastingNotes || '', // Concise review
                     rating: {
-                      score: wineData.score || 0, // Use the score from API
+                      score: wineData.score || 0, 
                       source: wineData.ratingSource || 'AI Analysis',
-                      review: wineData.tastingNotes || '' // Use concise review here too
+                      review: wineData.tastingNotes || '' 
                     },
-                    additionalReviews: [] // Clear this, we'll use webSearchResults instead
+                    additionalReviews: [] 
                   };
             });
             setWineDataList(formattedWines);
@@ -183,19 +180,16 @@ export default function Home() {
           region: wineData.region || '',
           grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
           type: wineData.type || '',
-          imageUrl: wineData.imageUrl || '', // Web search image URL
+          imageUrl: wineData.imageUrl || '', 
           uploadedImageUrl: responseData.data.imageUrl || '',
-          score: wineData.score || 0, // Use the score from API
-          summary: wineData.tastingNotes || '', // This is now the concise review
-          // Remove aiSummary as it's redundant now
-          // aiSummary: wineData.tastingNotes || '',
-          webSearchResults: wineData.webSearchResults || 'No web results available.', // Map the raw web results
+          score: wineData.score || 0,
+          summary: wineData.tastingNotes || '', // Concise review
           rating: {
-            score: wineData.score || 0, // Use the score from API
+            score: wineData.score || 0, 
             source: wineData.ratingSource || 'AI Analysis',
-            review: wineData.tastingNotes || '' // Use concise review here too
+            review: wineData.tastingNotes || '' 
           },
-          additionalReviews: [] // Clear this, we'll use webSearchResults instead
+          additionalReviews: [] 
         }));
         
         setWineDataList(wines);
@@ -249,19 +243,16 @@ export default function Home() {
                     region: wineData.region || '',
                     grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
                     type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', // Web search image URL
+                    imageUrl: wineData.imageUrl || '', 
                     uploadedImageUrl: uploadedImageUrl, 
-                    score: wineData.score || 0, // Use the score from API
-                    summary: wineData.tastingNotes || '', // This is now the concise review
-                    // Remove aiSummary as it's redundant now
-                    // aiSummary: wineData.tastingNotes || '',
-                    webSearchResults: wineData.webSearchResults || 'No web results available.', // Map the raw web results
+                    score: wineData.score || 0,
+                    summary: wineData.tastingNotes || '', // Concise review
                     rating: {
-                      score: wineData.score || 0, // Use the score from API
+                      score: wineData.score || 0, 
                       source: wineData.ratingSource || 'AI Analysis',
-                      review: wineData.tastingNotes || '' // Use concise review here too
+                      review: wineData.tastingNotes || '' 
                     },
-                    additionalReviews: [] // Clear this, we'll use webSearchResults instead
+                    additionalReviews: [] 
                   };
             });
             setWineDataList(formattedWines);
