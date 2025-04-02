@@ -127,7 +127,7 @@ export default async function handler(
     
     // Call OpenAI Vision API
     const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o",
+      model: "gpt-4-vision-preview",
       max_tokens: 1000,
       messages: [
         {
@@ -152,201 +152,87 @@ export default async function handler(
     // Process OpenAI response with proper null checking
     const wineAnalysis = completion.choices[0]?.message?.content || '';
     console.log(`[${requestId}] [${jobId}] OpenAI analysis complete`);
-    console.log(`[${requestId}] [${jobId}] OpenAI response received: "${wineAnalysis.substring(0, 100)}..."`);
+    console.log(`[${requestId}] [${jobId}] Raw OpenAI response:`, wineAnalysis);
 
     // Parse the analysis into structured data for multiple wines
     const wineDataArray = parseWineDetails(wineAnalysis, requestId, jobId);
     console.log(`[${requestId}] [${jobId}] Parsed wine data:`, JSON.stringify(wineDataArray, null, 2));
 
-    // Search for wine images using OpenAI's web search tool
+    // Search for wine images and generate reviews using OpenAI's web search
     const winesWithImages = await Promise.all(wineDataArray.map(async (wine) => {
       try {
-        const searchQuery = `${wine.producer} ${wine.name} ${wine.vintage} wine bottle`;
-        console.log(`[${requestId}] [${jobId}] Searching for wine image with query: ${searchQuery}`);
+        const searchQuery = `${wine.producer} ${wine.name} ${wine.vintage} wine review ratings`;
+        console.log(`[${requestId}] [${jobId}] Searching for wine info with query: ${searchQuery}`);
         
-        // First call: Use web search to get info about the wine
+        // Use GPT-4 with web search to get wine information and reviews
         const searchCompletion = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || "gpt-4o",
-          messages: [
-            {
-              role: "user",
-              content: `I need information about this wine: ${searchQuery}`
-            }
-          ],
-          tools: [{
-            type: "function",
-            function: {
-              name: "web_search",
-              description: "Search the web for information",
-              parameters: {
-                type: "object",
-                properties: {
-                  query: {
-                    type: "string",
-                    description: "The search query"
-                  }
-                },
-                required: ["query"]
-              }
-            }
-          }],
-          tool_choice: {
-            type: "function",
-            function: {
-              name: "web_search"
-            }
-          }
-        });
-
-        // Extract the web search results from the message
-        const webSearchMessage = searchCompletion.choices[0]?.message;
-        console.log(`[${requestId}] [${jobId}] Web search results received`);
-        
-        // Extract tool call results if present
-        let webSearchContent = '';
-        if (webSearchMessage?.tool_calls) {
-          // Handle the tool call response
-          const toolCall = webSearchMessage.tool_calls[0];
-          if (toolCall?.function?.name === 'web_search') {
-            try {
-              const args = JSON.parse(toolCall.function.arguments);
-              if (args.query) {
-                // Get web search results with a second API call
-                const webSearchResponse = await fetch('https://api.openai.com/v1/assistants/api/web-search', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                  },
-                  body: JSON.stringify({ query: args.query })
-                });
-                
-                if (webSearchResponse.ok) {
-                  const searchData = await webSearchResponse.json();
-                  webSearchContent = searchData.text || '';
-                  console.log(`[${requestId}] [${jobId}] Web search content: ${webSearchContent.substring(0, 100)}...`);
-                }
-              }
-            } catch (error) {
-              console.error(`[${requestId}] [${jobId}] Error processing web search:`, error);
-            }
-          }
-        }
-
-        // Second call: Generate complete review based on search results
-        const reviewCompletion = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || "gpt-4o",
+          model: "gpt-4-turbo-preview",
           messages: [
             {
               role: "system",
-              content: "You are a sommelier and wine expert. Create a detailed review of this wine based on the information provided and search results. Include flavor profile, food pairings, and why this wine is special."
+              content: "You are a wine expert. Search for and provide detailed information about the specified wine, including professional reviews, ratings, and an image of the bottle."
             },
-            // Include the initial wine data
             {
-              role: "user", 
-              content: `Create a detailed review for this wine:\n- Producer: ${wine.producer}\n- Name: ${wine.name}\n- Vintage: ${wine.vintage}\n- Region: ${wine.region}\n- Grape Varieties: ${wine.grapeVarieties}\n\nHere's what I found about this wine online: ${webSearchContent}`
+              role: "user",
+              content: `Search for detailed information about this wine:\nProducer: ${wine.producer}\nName: ${wine.name}\nVintage: ${wine.vintage}\n\nProvide professional reviews, ratings, and tasting notes. Also find and include a URL to an image of the wine bottle.`
+            }
+          ],
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "web_search",
+                description: "Search the web for wine information",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    query: {
+                      type: "string",
+                      description: "The search query"
+                    }
+                  },
+                  required: ["query"]
+                }
+              }
+            }
+          ],
+          tool_choice: "auto"
+        });
+
+        const searchMessage = searchCompletion.choices[0]?.message;
+        let searchResults = searchMessage?.content || '';
+        
+        // Extract image URL from the search results
+        const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
+        const imageUrls = searchResults.match(urlRegex);
+        const imageUrl = imageUrls ? imageUrls[0] : '';
+
+        // Generate a comprehensive review
+        const reviewCompletion = await openai.chat.completions.create({
+          model: "gpt-4-turbo-preview",
+          messages: [
+            {
+              role: "system",
+              content: "You are a professional wine critic. Create a detailed review combining the wine analysis and online information. Include tasting notes, food pairings, and what makes this wine special."
+            },
+            {
+              role: "user",
+              content: `Create a comprehensive review for this wine combining these details:\n\nOriginal Analysis:\n${JSON.stringify(wine, null, 2)}\n\nOnline Information:\n${searchResults}`
             }
           ]
         });
-        
-        // Extract the review content
-        const wineReview = reviewCompletion.choices[0]?.message?.content || '';
-        console.log(`[${requestId}] [${jobId}] Generated wine review for ${wine.name}`);
-        
-        // Third call: Use web search to get an image of the wine
-        const imageSearchCompletion = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || "gpt-4o",
-          messages: [
-            {
-              role: "user",
-              content: `Find an image of this wine bottle: ${searchQuery}`
-            }
-          ],
-          tools: [{
-            type: "function",
-            function: {
-              name: "web_search",
-              description: "Search the web for images",
-              parameters: {
-                type: "object",
-                properties: {
-                  query: {
-                    type: "string",
-                    description: "The search query"
-                  }
-                },
-                required: ["query"]
-              }
-            }
-          }],
-          tool_choice: {
-            type: "function",
-            function: {
-              name: "web_search"
-            }
-          }
-        });
-        
-        // Extract image URL from the message content
-        const imageSearchMessage = imageSearchCompletion.choices[0]?.message;
-        let imageUrl = '';
-        
-        // Process tool calls for image search
-        if (imageSearchMessage?.tool_calls) {
-          const toolCall = imageSearchMessage.tool_calls[0];
-          if (toolCall?.function?.name === 'web_search') {
-            try {
-              const args = JSON.parse(toolCall.function.arguments);
-              if (args.query) {
-                // Get image search results with a second API call
-                const imageSearchResponse = await fetch('https://api.openai.com/v1/assistants/api/web-search', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-                  },
-                  body: JSON.stringify({ 
-                    query: args.query,
-                    type: 'image'
-                  })
-                });
-                
-                if (imageSearchResponse.ok) {
-                  const searchData = await imageSearchResponse.json();
-                  if (searchData.images && searchData.images.length > 0) {
-                    imageUrl = searchData.images[0].url || '';
-                    console.log(`[${requestId}] [${jobId}] Found image URL: ${imageUrl}`);
-                  }
-                }
-              }
-            } catch (error) {
-              console.error(`[${requestId}] [${jobId}] Error processing image search:`, error);
-            }
-          }
-        }
-        
-        if (!imageUrl) {
-          // Fallback if no image found through tool call
-          const imageSearchContent = imageSearchMessage?.content || '';
-          console.log(`[${requestId}] [${jobId}] Image search content: ${imageSearchContent.substring(0, 100)}...`);
-          
-          // Parse the message content to find image URLs
-          const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
-          const imageUrls = imageSearchContent.match(urlRegex);
-          imageUrl = imageUrls ? imageUrls[0] : '';
-          
-          console.log(`[${requestId}] [${jobId}] Found image URL (fallback): ${imageUrl}`);
-        }
+
+        const enhancedReview = reviewCompletion.choices[0]?.message?.content || wine.tastingNotes;
         
         return {
           ...wine,
-          tastingNotes: wineReview,
-          imageUrl: imageUrl
+          tastingNotes: enhancedReview,
+          imageUrl: imageUrl || wine.imageUrl
         };
       } catch (error) {
-        console.error(`[${requestId}] [${jobId}] Error searching for wine image:`, error);
+        console.error(`[${requestId}] [${jobId}] Error processing wine info:`, error);
+        return wine;
       }
-      return wine;
     }));
     
     // Store result in KV
@@ -409,7 +295,9 @@ function parseWineDetails(analysis: string, requestId: string, jobId: string): W
   const wineSections = analysis.split(/(?=\*\*Producer\/Winery\*\*:)/);
   console.log(`[${requestId}] [${jobId}] Found ${wineSections.length} wine sections`);
   
-  return wineSections.map(section => {
+  return wineSections.filter(section => section.trim()).map(section => {
+    console.log(`[${requestId}] [${jobId}] Processing wine section:`, section);
+    
     const wineData: WineData = {
       producer: '',
       name: '',
@@ -426,55 +314,64 @@ function parseWineDetails(analysis: string, requestId: string, jobId: string): W
     const producerMatch = section.match(/\*\*Producer\/Winery\*\*:\s*([^*\n]+)/);
     if (producerMatch) {
       wineData.producer = producerMatch[1].trim();
+      console.log(`[${requestId}] [${jobId}] Found producer:`, wineData.producer);
     }
 
     // Extract name
     const nameMatch = section.match(/\*\*Name\*\*:\s*([^*\n]+)/);
     if (nameMatch) {
       wineData.name = nameMatch[1].trim();
+      console.log(`[${requestId}] [${jobId}] Found name:`, wineData.name);
     }
 
     // Extract vintage
     const vintageMatch = section.match(/\*\*Vintage\*\*:\s*(\d{4})/);
     if (vintageMatch) {
       wineData.vintage = vintageMatch[1];
+      console.log(`[${requestId}] [${jobId}] Found vintage:`, wineData.vintage);
     }
 
     // Extract region
     const regionMatch = section.match(/\*\*Region\*\*:\s*([^*\n]+)/);
     if (regionMatch) {
       wineData.region = regionMatch[1].trim();
+      console.log(`[${requestId}] [${jobId}] Found region:`, wineData.region);
     }
 
     // Extract grape varieties
     const grapeMatch = section.match(/\*\*Grape Varieties\*\*:\s*([^*\n]+)/);
     if (grapeMatch) {
       wineData.grapeVarieties = grapeMatch[1].trim();
+      console.log(`[${requestId}] [${jobId}] Found grape varieties:`, wineData.grapeVarieties);
     }
 
     // Extract tasting notes
     const tastingMatch = section.match(/\*\*Tasting Notes\*\*:\s*([^*\n]+)/);
     if (tastingMatch) {
       wineData.tastingNotes = tastingMatch[1].trim();
+      console.log(`[${requestId}] [${jobId}] Found tasting notes:`, wineData.tastingNotes);
     }
 
     // Extract score
     const scoreMatch = section.match(/\*\*Score\*\*:\s*(\d+)/);
     if (scoreMatch) {
       wineData.score = parseInt(scoreMatch[1]);
+      console.log(`[${requestId}] [${jobId}] Found score:`, wineData.score);
     }
 
     // Extract price
     const priceMatch = section.match(/\*\*Price\*\*:\s*([^*\n]+)/);
     if (priceMatch) {
       wineData.price = priceMatch[1].trim();
+      console.log(`[${requestId}] [${jobId}] Found price:`, wineData.price);
     }
 
     // If we have at least a producer or name, consider this a valid wine entry
     if (wineData.producer || wineData.name) {
-      console.log(`[${requestId}] [${jobId}] Parsed wine data:`, wineData);
+      console.log(`[${requestId}] [${jobId}] Valid wine entry found:`, wineData);
       return wineData;
     }
+    console.log(`[${requestId}] [${jobId}] Invalid wine entry, skipping`);
     return null;
   }).filter((wine): wine is WineData => wine !== null);
 } 
