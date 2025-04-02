@@ -49,32 +49,25 @@ export default function Home() {
             const uploadedImageUrl = result.data.imageUrl || 'data:image/svg+xml;base64,...'; // Maybe get from KV if needed?
 
             const formattedWines = result.data.wines.map((wineData: any) => {
-                // NOTE: Ensure this mapping matches the structure returned by the Netlify function
+                // NOTE: Ensure this mapping matches the structure returned by the API
                  return {
                     name: wineData.name || '',
                     winery: wineData.producer || wineData.winery || '',
                     year: wineData.vintage || wineData.year || '',
                     region: wineData.region || '',
-                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '', // Updated field name
+                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
                     type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', // Web search image URL
+                    imageUrl: wineData.imageUrl || '', 
                     uploadedImageUrl: uploadedImageUrl,
                     score: wineData.score || 0,
-                    summary: wineData.tastingNotes || '', // *** Use tastingNotes for the main review/summary ***
-                    aiSummary: wineData.tastingNotes || '', // Also use for aiSummary for consistency
+                    summary: wineData.tastingNotes || '', // Concise review
+                    webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
                     rating: {
-                      score: wineData.score || 0,
+                      score: wineData.score || 0, 
                       source: wineData.ratingSource || 'AI Analysis',
-                      review: wineData.tastingNotes || '' // Populate rating review as well
+                      review: wineData.tastingNotes || '' 
                     },
-                    additionalReviews: Array.isArray(wineData.additionalReviews) 
-                      ? wineData.additionalReviews.map((review: any) => {
-                          if (typeof review === 'string') { 
-                            return { source: 'Review Snippet', review: review }; 
-                          }
-                          return { source: review.source || 'Review Snippet', review: review.review || '' };
-                        })
-                      : []
+                    additionalReviews: [] 
                   };
             });
             setWineDataList(formattedWines);
@@ -186,26 +179,19 @@ export default function Home() {
           winery: wineData.producer || wineData.winery || '',
           year: wineData.vintage || wineData.year || '',
           region: wineData.region || '',
-          grapeVariety: wineData.grapeVarieties || wineData.varietal || '', // Updated field name
+          grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
           type: wineData.type || '',
-          imageUrl: wineData.imageUrl || '', // Web search image URL
+          imageUrl: wineData.imageUrl || '', 
           uploadedImageUrl: responseData.data.imageUrl || '',
           score: wineData.score || 0,
-          summary: wineData.tastingNotes || '', // *** Use tastingNotes for the main review/summary ***
-          aiSummary: wineData.tastingNotes || '', // Also use for aiSummary for consistency
+          summary: wineData.tastingNotes || '', // Concise review
+          webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
           rating: {
-            score: wineData.score || 0,
+            score: wineData.score || 0, 
             source: wineData.ratingSource || 'AI Analysis',
-            review: wineData.tastingNotes || '' // Populate rating review as well
+            review: wineData.tastingNotes || '' 
           },
-          additionalReviews: Array.isArray(wineData.additionalReviews) 
-            ? wineData.additionalReviews.map((review: any) => {
-                if (typeof review === 'string') {
-                  return { source: 'Review Snippet', review: review }; 
-                }
-                return { source: review.source || 'Review Snippet', review: review.review || '' };
-              })
-            : []
+          additionalReviews: [] 
         }));
         
         setWineDataList(wines);
@@ -251,32 +237,25 @@ export default function Home() {
             const uploadedImageUrl = data.data.imageUrl || 'data:image/svg+xml;base64,...'; // Maybe get from KV if needed?
 
             const formattedWines = data.data.wines.map((wineData: any) => {
-                // NOTE: Ensure this mapping matches the structure returned by the Netlify function
+                // NOTE: Ensure this mapping matches the structure returned by the API
                  return {
                     name: wineData.name || '',
                     winery: wineData.producer || wineData.winery || '',
                     year: wineData.vintage || wineData.year || '',
                     region: wineData.region || '',
-                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '', // Updated field name
+                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
                     type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', // Web search image URL
+                    imageUrl: wineData.imageUrl || '', 
                     uploadedImageUrl: uploadedImageUrl, 
                     score: wineData.score || 0,
-                    summary: wineData.tastingNotes || '', // *** Use tastingNotes for the main review/summary ***
-                    aiSummary: wineData.tastingNotes || '', // Also use for aiSummary for consistency
+                    summary: wineData.tastingNotes || '', // Concise review
+                    webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
                     rating: {
-                      score: wineData.score || 0,
+                      score: wineData.score || 0, 
                       source: wineData.ratingSource || 'AI Analysis',
-                      review: wineData.tastingNotes || '' // Populate rating review as well
+                      review: wineData.tastingNotes || '' 
                     },
-                    additionalReviews: Array.isArray(wineData.additionalReviews) 
-                      ? wineData.additionalReviews.map((review: any) => {
-                          if (typeof review === 'string') { 
-                            return { source: 'Review Snippet', review: review }; 
-                          }
-                          return { source: review.source || 'Review Snippet', review: review.review || '' };
-                        })
-                      : []
+                    additionalReviews: [] 
                   };
             });
             setWineDataList(formattedWines);
