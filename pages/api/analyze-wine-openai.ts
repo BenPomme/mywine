@@ -127,7 +127,7 @@ export default async function handler(
     
     // Call OpenAI Vision API
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
+      model: "gpt-4o",
       max_tokens: 1000,
       messages: [
         {
@@ -167,7 +167,7 @@ export default async function handler(
         // Step 1: Use GPT-4 with web search to find reviews, ratings, and image URL
         console.log(`[${requestId}] [${jobId}] Performing web search for: ${searchQuery}`);
         const searchCompletion = await openai.chat.completions.create({
-          model: "gpt-4-turbo-preview", // Or a model that supports web search well
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
@@ -213,7 +213,7 @@ export default async function handler(
         // Step 3: Generate a final, comprehensive review using initial analysis + web results
         console.log(`[${requestId}] [${jobId}] Generating final review for: ${searchQuery}`);
         const reviewCompletion = await openai.chat.completions.create({
-          model: "gpt-4-turbo-preview", // Use a strong model for synthesis
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
