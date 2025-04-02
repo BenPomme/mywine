@@ -168,6 +168,7 @@ export default async function handler(
         const textSearchQuery = `${searchQueryBase} wine reviews ratings tasting notes vivino decanter wine-searcher`;
         console.log(`[${requestId}] [${jobId}] Performing targeted text web search for: ${textSearchQuery}`);
         let webSearchTextContent = 'No specific web results found.'; // Default value
+        let textSearchMessageObject = null; // Variable to hold the message object
         try {
           const textSearchCompletion = await openai.chat.completions.create({
             model: "gpt-4o",
@@ -199,12 +200,14 @@ export default async function handler(
             ],
             tool_choice: "auto"
           });
+          // Store the message object before logging
+          textSearchMessageObject = textSearchCompletion.choices[0]?.message;
           // Log the entire message object for debugging
-          console.log(`[${requestId}] [${jobId}] Full text search message object for ${searchQueryBase}:`, JSON.stringify(textSearchCompletion.choices[0]?.message, null, 2));
-          webSearchTextContent = textSearchCompletion.choices[0]?.message?.content || 'No specific web results found.';
+          console.log(`[${requestId}] [${jobId}] Full text search message object for ${searchQueryBase}:`, JSON.stringify(textSearchMessageObject, null, 2));
+          webSearchTextContent = textSearchMessageObject?.content || 'No specific web results found.';
           console.log(`[${requestId}] [${jobId}] Text web search response content for ${searchQueryBase}:`, webSearchTextContent);
         } catch(searchError) {
-            console.error(`[${requestId}] [${jobId}] Error during text web search for ${searchQueryBase}:`, searchError);
+            console.error(`[${requestId}] [${jobId}] *** ERROR during text web search API call for ${searchQueryBase}: ***`, searchError);
             webSearchTextContent = 'Error during web search.';
         }
 
