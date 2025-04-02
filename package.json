@@ -6,14 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "npm install openai@^4.0.0 --save"
   },
   "dependencies": {
     "@vercel/blob": "^0.27.3",
     "@vercel/kv": "^3.0.0",
     "axios": "^1.5.0",
     "next": "^14.0.0",
-    "openai": "^4.90.0",
+    "openai": "^4.91.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^4.11.0",
@@ -21,11 +22,10 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
-    "@netlify/functions": "^3.0.4",
     "@types/node": "^20.6.3",
     "@types/react": "^18.2.22",
     "@types/react-dom": "^18.2.7",
-    "@types/uuid": "^10.0.0",
+    "@types/uuid": "^9.0.4",
     "autoprefixer": "^10.4.15",
     "eslint": "^8.49.0",
     "eslint-config-next": "^13.5.2",

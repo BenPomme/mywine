@@ -1,14 +1,19 @@
 # Wine Finder
 
-AI-powered wine identification and rating app.
+AI-powered wine identification and rating app using OpenAI GPT-4o.
+
+## Deployment Information
+
+- **Production Branch**: `vercel-production` (deployed to Vercel)
+- **Latest Update**: April 1, 2025 - Upgraded to GPT-4o API
+- **Features Added**: Direct OpenAI integration, removed Netlify dependency
+- **Deployment URL**: https://winefinder-bens-projects-8301eff2.vercel.app
 
 ## Features
 
 - Upload images of wine labels or menus
-- AI-powered analysis using OpenAI's Vision API
-- Real-time web search for authentic wine reviews
-- Extract and normalize ratings from multiple sources
-- Display wine details, ratings, and expert reviews
+- AI-powered analysis using OpenAI's GPT-4o Vision API
+- Display wine details, AI ratings, and AI-generated summaries
 - Apple-inspired clean, responsive UI design
 
 ## Technologies
@@ -93,4 +98,5 @@ The application uses Next.js API routes to securely handle external API calls:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-Last deployment trigger: [Updated timestamp to trigger deployment] 
+---
+Last deployment trigger: [Updated timestamp to trigger deployment - April 1, 2025] 
