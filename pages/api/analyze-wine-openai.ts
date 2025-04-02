@@ -15,13 +15,11 @@ type WineData = {
   producer: string;
   vintage: string;
   region: string;
-  varietal: string;
-  type: string;
+  grapeVarieties: string;
+  tastingNotes: string;
   score: number;
-  summary: string;
+  price: string;
   imageUrl: string;
-  ratingSource: string;
-  additionalReviews: Array<{source: string, review: string}>;
 };
 
 type AnalyzeRequestBody = {
@@ -134,7 +132,7 @@ export default async function handler(
       messages: [
         {
           role: "system",
-          content: "You are a wine expert assistant that can identify wines from images of bottles or labels. For each wine detected in the image, provide detailed information including the producer/winery, name, vintage year, region, grape varieties, and any other relevant details visible in the image. If possible, estimate the wine's quality and provide tasting notes based on your knowledge of the wine. If multiple wines are visible in the image, analyze each one separately."
+          content: "You are a wine expert assistant that can identify wines from images of bottles or labels. For each wine detected in the image, provide detailed information in the following format:\n\n**Producer/Winery**: [Producer name]\n**Name**: [Wine name]\n**Vintage**: [Year]\n**Region**: [Region/Appellation]\n**Grape Varieties**: [Grape varieties]\n**Tasting Notes**: [Detailed tasting notes]\n**Score**: [Rating out of 100]\n**Price**: [Price if visible]\n\nIf multiple wines are visible in the image, analyze each one separately with the same format."
         },
         {
           role: "user",
@@ -157,72 +155,84 @@ export default async function handler(
     console.log(`[${requestId}] [${jobId}] OpenAI response received: "${wineAnalysis.substring(0, 100)}..."`);
 
     // Parse the analysis into structured data for multiple wines
-    const wineDataArray = parseWineDetails(wineAnalysis);
+    const wineDataArray = parseWineDetails(wineAnalysis, requestId, jobId);
     console.log(`[${requestId}] [${jobId}] Parsed wine data:`, JSON.stringify(wineDataArray, null, 2));
 
     // Search for wine images using OpenAI's web search tool
     const winesWithImages = await Promise.all(wineDataArray.map(async (wine) => {
       try {
         const searchQuery = `${wine.producer} ${wine.name} ${wine.vintage} wine bottle`;
+        console.log(`[${requestId}] [${jobId}] Searching for wine image with query: ${searchQuery}`);
+        
+        // First call: Use web search to get info about the wine
         const searchCompletion = await openai.chat.completions.create({
           model: process.env.OPENAI_MODEL || "gpt-4o",
           messages: [
             {
-              role: "system",
-              content: "You are a wine expert assistant. Search for an image of the specified wine bottle and return the first image URL from the search results."
-            },
-            {
               role: "user",
-              content: `Search for an image of this wine: ${searchQuery}`
+              content: `I need information about this wine: ${searchQuery}`
             }
           ],
-          tools: [
-            {
-              type: "function",
-              function: {
-                name: "web_search",
-                description: "Search the web for information about a wine",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    query: {
-                      type: "string",
-                      description: "The search query"
-                    }
-                  },
-                  required: ["query"]
-                }
-              }
-            }
-          ],
-          tool_choice: "auto"
+          tools: [{ type: "web_search" }]
         });
 
-        const toolCall = searchCompletion.choices[0]?.message?.tool_calls?.[0];
-        if (toolCall?.function?.name === "web_search") {
-          const searchResult = JSON.parse(toolCall.function.arguments);
-          const searchResponse = await fetch(`https://api.openai.com/v1/web/search`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-              query: searchResult.query,
-              type: 'image'
-            })
-          });
+        // Extract the web search results from the message
+        const webSearchMessage = searchCompletion.choices[0]?.message;
+        console.log(`[${requestId}] [${jobId}] Web search results received`);
 
-          const searchData = await searchResponse.json();
-          if (searchData.images?.[0]?.url) {
-            return {
-              ...wine,
-              imageUrl: searchData.images[0].url
-            };
-          }
-        }
+        // Second call: Generate complete review based on search results
+        const reviewCompletion = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: "You are a sommelier and wine expert. Create a detailed review of this wine based on the information provided and search results. Include flavor profile, food pairings, and why this wine is special."
+            },
+            // Include the initial wine data
+            {
+              role: "user", 
+              content: `Create a detailed review for this wine:\n- Producer: ${wine.producer}\n- Name: ${wine.name}\n- Vintage: ${wine.vintage}\n- Region: ${wine.region}\n- Grape Varieties: ${wine.grapeVarieties}`
+            },
+            // Include the web search results
+            webSearchMessage,
+          ]
+        });
+        
+        // Extract the review content
+        const wineReview = reviewCompletion.choices[0]?.message?.content || '';
+        console.log(`[${requestId}] [${jobId}] Generated wine review for ${wine.name}`);
+        
+        // Third call: Use web search to get an image of the wine
+        const imageSearchCompletion = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-4o",
+          messages: [
+            {
+              role: "user",
+              content: `Find an image of this wine bottle: ${searchQuery}`
+            }
+          ],
+          tools: [{ type: "web_search" }]
+        });
+        
+        // Extract image URL from the message content
+        const imageSearchMessage = imageSearchCompletion.choices[0]?.message;
+        const imageSearchContent = imageSearchMessage?.content || '';
+        console.log(`[${requestId}] [${jobId}] Image search content: ${imageSearchContent.substring(0, 100)}...`);
+        
+        // Parse the message content to find image URLs
+        const urlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp))/gi;
+        const imageUrls = imageSearchContent.match(urlRegex);
+        const imageUrl = imageUrls ? imageUrls[0] : '';
+        
+        console.log(`[${requestId}] [${jobId}] Found image URL: ${imageUrl}`);
+        
+        return {
+          ...wine,
+          tastingNotes: wineReview,
+          imageUrl: imageUrl
+        };
       } catch (error) {
-        console.error(`Error searching for wine image:`, error);
+        console.error(`[${requestId}] [${jobId}] Error searching for wine image:`, error);
       }
       return wine;
     }));
@@ -280,105 +290,79 @@ export default async function handler(
 }
 
 // Helper function to parse the unstructured text from OpenAI into structured data
-function parseWineDetails(analysisText: string): WineData[] {
-  // Split the analysis text into sections for each wine
-  const wineSections = analysisText.split(/(?=\d+\.|Wine \d+:|Bottle \d+:|First|Second|Third|Fourth|Fifth)/i);
+function parseWineDetails(analysis: string, requestId: string, jobId: string): WineData[] {
+  console.log(`[${requestId}] [${jobId}] Parsing wine details from analysis:`, analysis);
+  
+  // Split the analysis into sections for each wine
+  const wineSections = analysis.split(/(?=\*\*Producer\/Winery\*\*:)/);
+  console.log(`[${requestId}] [${jobId}] Found ${wineSections.length} wine sections`);
   
   return wineSections.map(section => {
-    // Create a default structure for each wine
     const wineData: WineData = {
-      name: '',
       producer: '',
+      name: '',
       vintage: '',
       region: '',
-      varietal: '',
-      type: '',
+      grapeVarieties: '',
+      tastingNotes: '',
       score: 0,
-      summary: section.trim(),
-      imageUrl: '',
-      ratingSource: 'AI Analysis',
-      additionalReviews: []
+      price: '',
+      imageUrl: ''
     };
 
-    // Extract producer/winery
-    const producerMatch = section.match(/(?:Producer|Winery|Maker):\s*([^,\n.]+)/i);
-    if (producerMatch) wineData.producer = producerMatch[1].trim();
+    // Extract producer
+    const producerMatch = section.match(/\*\*Producer\/Winery\*\*:\s*([^*\n]+)/);
+    if (producerMatch) {
+      wineData.producer = producerMatch[1].trim();
+    }
 
     // Extract name
-    const nameMatch = section.match(/(?:Name|Wine):\s*([^,\n.]+)/i);
-    if (nameMatch) wineData.name = nameMatch[1].trim();
-    
+    const nameMatch = section.match(/\*\*Name\*\*:\s*([^*\n]+)/);
+    if (nameMatch) {
+      wineData.name = nameMatch[1].trim();
+    }
+
     // Extract vintage
-    const vintageMatch = section.match(/(?:Vintage|Year):\s*(\d{4})/i);
-    if (vintageMatch) wineData.vintage = vintageMatch[1];
+    const vintageMatch = section.match(/\*\*Vintage\*\*:\s*(\d{4})/);
+    if (vintageMatch) {
+      wineData.vintage = vintageMatch[1];
+    }
 
     // Extract region
-    const regionMatch = section.match(/(?:Region|Appellation):\s*([^,\n.]+)/i);
-    if (regionMatch) wineData.region = regionMatch[1].trim();
-    
-    // Extract grape variety
-    const varietalMatch = section.match(/(?:Grape|Varietal|Variety):\s*([^,\n.]+)/i);
-    if (varietalMatch) wineData.varietal = varietalMatch[1].trim();
-    
-    // Extract wine type
-    const typeMatch = section.match(/(?:Type):\s*(red|white|rosé|rose|sparkling|dessert)/i);
-    if (typeMatch) wineData.type = typeMatch[1].trim();
-    
-    // Extract score if available
-    const scoreMatch = section.match(/(?:Rating|Score|Points):\s*(\d{1,2}(?:\.\d)?)\s*(?:\/\s*\d{1,3}|points)?/i);
-    if (scoreMatch) {
-      const scoreValue = parseFloat(scoreMatch[1]);
-      // Normalize to a 100-point scale if needed
-      if (scoreValue <= 5) {
-        wineData.score = scoreValue * 20; // Convert 5-point scale to 100
-      } else if (scoreValue <= 10) {
-        wineData.score = scoreValue * 10; // Convert 10-point scale to 100
-      } else if (scoreValue <= 20) {
-        wineData.score = scoreValue * 5; // Convert 20-point scale to 100
-      } else {
-        wineData.score = scoreValue; // Already on 100-point scale
-      }
-    } else {
-      // Estimate a score based on sentiment in the text
-      const positiveTerms = ['excellent', 'outstanding', 'superb', 'exceptional', 'great', 'remarkable', 'fantastic'];
-      const mediumTerms = ['good', 'nice', 'pleasant', 'enjoyable', 'decent', 'fine'];
-      const negativeTerms = ['poor', 'disappointing', 'mediocre', 'bad', 'flawed'];
-      
-      let scoreEstimate = 85; // Default medium-high score
-      
-      for (const term of positiveTerms) {
-        if (section.toLowerCase().includes(term)) {
-          scoreEstimate += 5;
-          break;
-        }
-      }
-      
-      for (const term of mediumTerms) {
-        if (section.toLowerCase().includes(term)) {
-          scoreEstimate = 80;
-          break;
-        }
-      }
-      
-      for (const term of negativeTerms) {
-        if (section.toLowerCase().includes(term)) {
-          scoreEstimate = 70;
-          break;
-        }
-      }
-      
-      wineData.score = Math.min(100, scoreEstimate); // Cap at 100
+    const regionMatch = section.match(/\*\*Region\*\*:\s*([^*\n]+)/);
+    if (regionMatch) {
+      wineData.region = regionMatch[1].trim();
     }
 
-    // Extract tasting notes as reviews
-    const tastingMatch = section.match(/(?:Tasting Notes|Taste|Palate|Notes|Flavors):\s*([^.]+)/i);
+    // Extract grape varieties
+    const grapeMatch = section.match(/\*\*Grape Varieties\*\*:\s*([^*\n]+)/);
+    if (grapeMatch) {
+      wineData.grapeVarieties = grapeMatch[1].trim();
+    }
+
+    // Extract tasting notes
+    const tastingMatch = section.match(/\*\*Tasting Notes\*\*:\s*([^*\n]+)/);
     if (tastingMatch) {
-      wineData.additionalReviews = [{
-        source: 'AI Analysis',
-        review: tastingMatch[1].trim()
-      }];
+      wineData.tastingNotes = tastingMatch[1].trim();
     }
 
-    return wineData;
-  }).filter(wine => wine.name || wine.producer); // Only return wines that have at least a name or producer
+    // Extract score
+    const scoreMatch = section.match(/\*\*Score\*\*:\s*(\d+)/);
+    if (scoreMatch) {
+      wineData.score = parseInt(scoreMatch[1]);
+    }
+
+    // Extract price
+    const priceMatch = section.match(/\*\*Price\*\*:\s*([^*\n]+)/);
+    if (priceMatch) {
+      wineData.price = priceMatch[1].trim();
+    }
+
+    // If we have at least a producer or name, consider this a valid wine entry
+    if (wineData.producer || wineData.name) {
+      console.log(`[${requestId}] [${jobId}] Parsed wine data:`, wineData);
+      return wineData;
+    }
+    return null;
+  }).filter((wine): wine is WineData => wine !== null);
 } 
