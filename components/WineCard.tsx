@@ -169,7 +169,7 @@ const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
                   {webSnippets.map((snippet, index) => (
                     <div key={index} className="p-2 bg-gray-50 rounded">
                       <p className="text-xs text-gray-500 mb-1">Source: {snippet.source}</p>
-                      <p className="text-sm text-gray-700">"{snippet.snippet}"</p>
+                      <p className="text-sm text-gray-700">{snippet.snippet}</p>
                     </div>
                   ))}
                 </div>
