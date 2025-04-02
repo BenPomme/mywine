@@ -6,11 +6,8 @@ import RatingStars from './RatingStars';
 interface WineCardProps {
   wine: Wine & { webSnippets?: string };
   isFeatured?: boolean;
+  onTagClick?: (tag: string) => void;
 }
-
-// Placeholder SVG and reliable fallback images
-const placeholderSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Crect width='10' height='10' fill='%23E5E7EB'/%3E%3C/svg%3E";
-const fallbackWineImage = "https://images.vivino.com/thumbs/1pu9tNMzSY6qeXWOlXvLdA_pb_x300.png"; // Reliable Vivino red wine silhouette
 
 // Helper to generate star icons based on score (out of 100)
 const renderStars = (score: number) => {
@@ -80,111 +77,124 @@ const parseWebSnippets = (snippetsText: string): { source: string, snippet: stri
     });
 };
 
-const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured }) => {
+// Function to extract flavor profile tags from tasting notes and wine details
+const extractFlavorTags = (wine: Wine & { webSnippets?: string }): string[] => {
+  const tags: string[] = [];
+  const combinedText = `${wine.tastingNotes || ''} ${wine.webSnippets || ''} ${wine.grapeVarieties || ''} ${wine.region || ''}`.toLowerCase();
+  
+  // Check for flavor profiles
+  if (combinedText.includes('sweet') || combinedText.includes('sugar') || combinedText.includes('residual sugar')) {
+    tags.push('Sweet');
+  }
+  
+  if (combinedText.includes('dry') || combinedText.includes('crisp') || combinedText.includes('brut')) {
+    tags.push('Dry');
+  }
+  
+  if (combinedText.includes('fruit') || combinedText.includes('berry') || combinedText.includes('cherry') || 
+      combinedText.includes('plum') || combinedText.includes('apple') || combinedText.includes('citrus')) {
+    tags.push('Fruity');
+  }
+  
+  if (combinedText.includes('full bod') || combinedText.includes('robust') || combinedText.includes('rich') || 
+      combinedText.includes('intense') || combinedText.includes('heavy')) {
+    tags.push('Full Body');
+  }
+  
+  if (combinedText.includes('light bod') || combinedText.includes('delicate') || combinedText.includes('subtle') || 
+      combinedText.includes('elegant') || combinedText.includes('refreshing')) {
+    tags.push('Light');
+  }
+  
+  return tags;
+};
+
+const WineCard: React.FC<WineCardProps> = ({ wine, isFeatured, onTagClick }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [imageError, setImageError] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const webSnippets = parseWebSnippets(wine.webSnippets || '');
-
+  const flavorTags = extractFlavorTags(wine);
+  
   // Handle user rating change
   const handleRatingChange = (rating: number) => {
     console.log(`Rating changed to ${rating} for ${wine.name}`);
     // This would typically update state or call an API
   };
 
-  const handleImageError = () => {
-    console.log(`Image error for: ${wine.imageUrl}`);
-    setImageError(true);
-  };
-
-  // Get a cleaned image URL or fallback to placeholder
-  const getImageUrl = () => {
-    // First check if we have a wine.imageUrl that isn't empty and hasn't errored
-    if (wine.imageUrl && !imageError && wine.imageUrl.startsWith('http')) {
-      // Check if this is a Vivino CDN URL which we can trust
-      if (wine.imageUrl.includes('images.vivino.com')) {
-        return wine.imageUrl; // Vivino images are reliable
-      }
-      
-      // For non-Vivino domains, still try the URL unless there was an error
-      return wine.imageUrl;
-    }
-    
-    // If the URL caused an error or doesn't exist, use fallback
-    return fallbackWineImage;
-  };
-
   return (
-    <div className={`bg-white shadow-md rounded-lg overflow-hidden ${isFeatured ? 'border-2 border-indigo-500' : ''}`}>
-      <div className="md:flex">
-        {/* Image Section */}
-        <div className="md:flex-shrink-0 p-4 flex items-center justify-center md:w-1/3">
-          <img 
-            className="h-48 w-full object-contain md:h-full md:w-48" 
-            src={getImageUrl()} 
-            alt={`${wine.producer || wine.winery || ''} ${wine.name || ''}`}
-            onError={handleImageError}
-          />
-        </div>
-
-        {/* Details Section */}
-        <div className="p-6 flex-grow">
-          <div className="flex justify-between items-start mb-2">
-            <div>
-              <div className="uppercase tracking-wide text-sm text-indigo-600 font-semibold">
-                {wine.winery || 'Unknown Winery'}
-              </div>
-              <h2 className="block mt-1 text-lg leading-tight font-medium text-black">
-                {wine.name || 'Unknown Wine'}
-              </h2>
-              <p className="mt-1 text-gray-500 text-sm">
-                {wine.year} {wine.region ? `· ${wine.region}` : ''} {wine.grapeVariety ? `· ${wine.grapeVariety}` : ''}
-              </p>
+    <div className={`bg-white shadow-md rounded-lg overflow-hidden ${isFeatured ? 'border-2 border-indigo-500' : ''} hover:shadow-lg transition-shadow duration-300`}>
+      <div className="p-6">
+        {/* Header with Name and Score */}
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <div className="uppercase tracking-wide text-sm text-indigo-600 font-semibold">
+              {wine.producer || wine.winery || 'Unknown Producer'}
             </div>
-            <div className="text-right ml-4 flex-shrink-0">
-              <span className="text-xl font-bold text-gray-900">
-                {wine.score ? `${wine.score}` : 'N/A'}<span className="text-sm font-normal text-gray-500">/100</span>
-              </span>
-              <div className="mt-1 flex items-center justify-end">
-                 {renderStars(wine.score || 0)} 
-              </div>
-               <p className="text-xs text-gray-500 mt-1">(AI Analysis)</p> 
-            </div>
+            <h2 className="block mt-1 text-xl leading-tight font-medium text-black">
+              {wine.name || 'Unknown Wine'}
+            </h2>
+            <p className="mt-1 text-gray-600 text-sm">
+              {wine.vintage || wine.year} {wine.region ? `· ${wine.region}` : ''} {wine.grapeVarieties ? `· ${wine.grapeVarieties}` : ''}
+            </p>
           </div>
-          
-          {/* AI Review Section */}
-          {wine.summary && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <h3 className="text-md font-semibold text-gray-700 mb-2">AI Review</h3>
-              <p className="text-gray-600 text-sm">
-                {wine.summary} 
-              </p>
+          <div className="text-right ml-4 flex-shrink-0">
+            <span className="text-xl font-bold text-gray-900">
+              {wine.score ? `${wine.score}` : 'N/A'}<span className="text-sm font-normal text-gray-500">/100</span>
+            </span>
+            <div className="mt-1 flex items-center justify-end">
+               {renderStars(wine.score || 0)} 
             </div>
-          )}
-
-           {/* Collapsible Web Snippets Section */} 
-          {webSnippets.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <button 
-                onClick={() => setShowSnippets(!showSnippets)}
-                className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
-              >
-                {showSnippets ? 'Hide' : 'Show'} Web Snippets
-                <svg className={`ml-1 w-4 h-4 transform ${showSnippets ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-              </button>
-              {showSnippets && (
-                <div className="mt-2 space-y-2">
-                  {webSnippets.map((snippet, index) => (
-                    <div key={index} className="p-2 bg-gray-50 rounded">
-                      <p className="text-xs text-gray-500 mb-1">Source: {snippet.source}</p>
-                      <p className="text-sm text-gray-700">{snippet.snippet}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+            <p className="text-xs text-gray-500 mt-1">(AI Analysis)</p> 
+          </div>
         </div>
+        
+        {/* Flavor Profile Tags */}
+        {flavorTags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3 mb-4">
+            {flavorTags.map((tag) => (
+              <span 
+                key={tag} 
+                onClick={() => onTagClick && onTagClick(tag)}
+                className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-medium rounded-full cursor-pointer hover:bg-indigo-200 transition-colors"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {/* AI Review Section */}
+        {wine.tastingNotes && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h3 className="text-md font-semibold text-gray-700 mb-2">Tasting Notes</h3>
+            <p className="text-gray-600">
+              {wine.tastingNotes} 
+            </p>
+          </div>
+        )}
+
+        {/* Collapsible Web Snippets Section */} 
+        {webSnippets.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <button 
+              onClick={() => setShowSnippets(!showSnippets)}
+              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
+            >
+              {showSnippets ? 'Hide' : 'Show'} Web Snippets
+              <svg className={`ml-1 w-4 h-4 transform ${showSnippets ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            {showSnippets && (
+              <div className="mt-2 space-y-2">
+                {webSnippets.map((snippet, index) => (
+                  <div key={index} className="p-2 bg-gray-50 rounded">
+                    <p className="text-xs text-gray-500 mb-1">Source: {snippet.source}</p>
+                    <p className="text-sm text-gray-700">{snippet.snippet}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

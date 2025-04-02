@@ -8,7 +8,12 @@ export interface Wine {
   region?: string;
   grapeVariety?: string;
   varietal?: string;
+  grapeVarieties?: string;
   type?: string;
+  tastingNotes?: string;
+  score?: number;
+  summary?: string;
+  price?: string;
   imageUrl?: string;
   uploadedImageUrl?: string;
   rating?: {
@@ -23,8 +28,6 @@ export interface Wine {
     text?: string;
   }> | string[];
   aiSummary?: string;
-  score?: number;
-  summary?: string;
 }
 
 // Wine rating details
@@ -46,12 +49,12 @@ export interface AnalyzeWineResponse {
   };
 }
 
-// Types for form state
+// Upload state for image processing
 export interface UploadState {
-  isLoading: boolean;
+  uploading: boolean;
+  file: File | null;
+  preview: string | null;
   error: string | null;
-  progress?: number;
-  stage?: string;
 }
 
 // Preference settings

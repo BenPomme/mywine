@@ -9,354 +9,303 @@ type PollingStatus = 'idle' | 'polling' | 'completed' | 'failed';
 
 export default function Home() {
   const [uploadState, setUploadState] = useState<UploadState>({
-    isLoading: false,
+    uploading: false,
+    file: null,
+    preview: null,
     error: null,
   });
-  const [wineDataList, setWineDataList] = useState<Wine[]>([]);
+  const [wineDataList, setWineDataList] = useState<(Wine & { webSnippets?: string })[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<PollingStatus>('idle');
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to hold interval ID
-
-  // --- Polling Logic --- 
-  useEffect(() => {
-    // Function to check job status
-    const checkJobStatus = async () => {
-      if (!jobId) return;
-      console.log(`Polling for Job ID: ${jobId}`);
-      try {
-        const response = await fetch(`/api/get-analysis-result?jobId=${jobId}`);
-        if (!response.ok) {
-          // Handle non-200 responses from the status check itself
-          throw new Error(`Status check failed: ${response.statusText}`);
-        }
-        const result = await response.json();
-        console.log("Polling result:", result);
-
-        if (result.status === 'completed') {
-          console.log("Job completed!");
-          setPollingStatus('completed');
-          setUploadState({ isLoading: false, error: null });
-          setJobId(null); // Clear job ID
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-          
-          // Format and set results
-          if (result.data?.wines && Array.isArray(result.data.wines)) {
-            // *** Reuse the formatting logic from handleImageUpload ***
-             // Find the original uploaded image URL if stored, or use placeholder
-            const uploadedImageUrl = result.data.imageUrl || 'data:image/svg+xml;base64,...'; // Maybe get from KV if needed?
-
-            const formattedWines = result.data.wines.map((wineData: any) => {
-                // NOTE: Ensure this mapping matches the structure returned by the API
-                 return {
-                    name: wineData.name || '',
-                    winery: wineData.producer || wineData.winery || '',
-                    year: wineData.vintage || wineData.year || '',
-                    region: wineData.region || '',
-                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
-                    type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', 
-                    uploadedImageUrl: uploadedImageUrl,
-                    score: wineData.score || 0,
-                    summary: wineData.tastingNotes || '', // Concise review
-                    webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
-                    rating: {
-                      score: wineData.score || 0, 
-                      source: wineData.ratingSource || 'AI Analysis',
-                      review: wineData.tastingNotes || '' 
-                    },
-                    additionalReviews: [] 
-                  };
-            });
-            setWineDataList(formattedWines);
-          } else {
-             throw new Error('Completed job missing wine data');
-          }
-
-        } else if (result.status === 'failed' || result.status === 'trigger_failed') {
-          console.error("Job failed:", result.data?.error);
-          setPollingStatus('failed');
-          setUploadState({ isLoading: false, error: result.data?.error || 'Analysis failed.' });
-          setJobId(null);
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-        } else if (result.status === 'not_found') {
-           console.error("Job ID not found during polling.");
-           setPollingStatus('failed');
-           setUploadState({ isLoading: false, error: 'Analysis job lost or expired.' });
-           setJobId(null);
-           if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-        } else {
-          // Still processing ('uploading', 'processing', 'processing_started')
-          console.log(`Job status: ${result.status}, continuing poll...`);
-          setPollingStatus('polling'); // Ensure status reflects polling
-          setUploadState({ isLoading: true, error: null }); // Keep loading true
-        }
-
-      } catch (error) {
-        console.error('Error during polling:', error);
-        setPollingStatus('failed');
-        setUploadState({ isLoading: false, error: error instanceof Error ? error.message : 'Polling error occurred' });
-        setJobId(null);
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-      }
-    };
-
-    // Start polling if we have a jobId and status is processing/polling
-    if (jobId && (pollingStatus === 'polling' || pollingStatus === 'idle')) {
-       // Clear any existing interval before starting a new one
-       if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-       }
-       // Set isLoading true when starting to poll
-       setUploadState({ isLoading: true, error: null }); 
-       // Initial check immediately, then set interval
-       checkJobStatus(); 
-       pollingIntervalRef.current = setInterval(checkJobStatus, 5000); // Poll every 5 seconds
-       setPollingStatus('polling'); // Explicitly set status
-    }
-
-    // Cleanup function to clear interval when component unmounts or jobId changes
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-        console.log("Polling interval cleared.");
-      }
-    };
-  }, [jobId, pollingStatus]); // Rerun effect if jobId or pollingStatus changes
-
-
-  const handleImageUpload = async (base64Image: string) => {
-    try {
-      setUploadState({ isLoading: true, error: null });
-      setWineDataList([]); // Clear previous results
-      setJobId(null); // Clear previous job ID
-      setPollingStatus('idle'); // Reset polling status
-      if (pollingIntervalRef.current) { // Clear previous interval if any
-         clearInterval(pollingIntervalRef.current);
-         pollingIntervalRef.current = null;
-      }
-
-      // Submit image analysis request
-      console.log('Submitting image analysis request...');
+  const [pollingError, setPollingError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingCountRef = useRef<number>(0);
+  
+  // Add filter state
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [sortOption, setSortOption] = useState<string>('score'); // 'score', 'name', or 'year'
+  
+  // Filter and sort the wine list based on active filters
+  const filteredAndSortedWines = wineDataList
+    .filter((wine) => {
+      if (activeFilters.length === 0) return true;
       
+      // Check if wine has any of the active filters
+      const wineText = `${wine.tastingNotes || ''} ${wine.webSnippets || ''} ${wine.grapeVarieties || ''} ${wine.region || ''}`.toLowerCase();
+      
+      return activeFilters.some(filter => {
+        switch (filter) {
+          case 'Sweet':
+            return wineText.includes('sweet') || wineText.includes('sugar') || wineText.includes('residual sugar');
+          case 'Dry':
+            return wineText.includes('dry') || wineText.includes('crisp') || wineText.includes('brut');
+          case 'Fruity':
+            return wineText.includes('fruit') || wineText.includes('berry') || wineText.includes('cherry') || 
+                   wineText.includes('plum') || wineText.includes('apple') || wineText.includes('citrus');
+          case 'Full Body':
+            return wineText.includes('full bod') || wineText.includes('robust') || wineText.includes('rich') || 
+                   wineText.includes('intense') || wineText.includes('heavy');
+          case 'Light':
+            return wineText.includes('light bod') || wineText.includes('delicate') || wineText.includes('subtle') || 
+                   wineText.includes('elegant') || wineText.includes('refreshing');
+          default:
+            return false;
+        }
+      });
+    })
+    .sort((a, b) => {
+      switch (sortOption) {
+        case 'score':
+          return (b.score || 0) - (a.score || 0);
+        case 'name':
+          return (a.name || '').localeCompare(b.name || '');
+        case 'year':
+          const yearA = parseInt(a.vintage || a.year || '0');
+          const yearB = parseInt(b.vintage || b.year || '0');
+          return yearB - yearA;
+        default:
+          return 0;
+      }
+    });
+  
+  // Toggle a filter
+  const handleFilterToggle = (tag: string) => {
+    setActiveFilters(prev => 
+      prev.includes(tag) 
+        ? prev.filter(f => f !== tag) 
+        : [...prev, tag]
+    );
+  };
+
+  // Handle file upload status and progress
+  const handleUploadStatusChange = (status: 'uploading' | 'success' | 'error', data?: any) => {
+    if (status === 'uploading') {
+      setUploadProgress(data?.progress || 0);
+      if (data?.progress === 100) {
+        setUploadProgress(0);
+      }
+    }
+  };
+
+  // Submit handler for image analysis
+  const handleSubmit = async (data: { image: string }) => {
+    console.log('Submitting image analysis request...');
+    setPollingStatus('polling');
+    setPollingError(null);
+    pollingCountRef.current = 0;
+    
+    try {
       const response = await fetch('/api/analyze-wine-openai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ image: base64Image }),
+        body: JSON.stringify({ image: data.image }),
       });
-
-      // Read the job ID from headers first
-      const headerJobId = response.headers.get('x-job-id');
       
-      // Then read the response body only once and store it
-      const responseData = await response.json();
-      const jobId = headerJobId || responseData.jobId;
+      const result = await response.json();
+      console.log('Received Job ID:', result.jobId);
+      setJobId(result.jobId);
       
-      console.log('Received Job ID:', jobId);
-
-      if (!jobId) {
-        throw new Error('No job ID received from server');
-      }
-
-      if (responseData.status === 'completed' && responseData.data?.wines) {
-        // Format wine data for display
-        const wines = responseData.data.wines.map((wineData: any) => ({
-          name: wineData.name || '',
-          winery: wineData.producer || wineData.winery || '',
-          year: wineData.vintage || wineData.year || '',
-          region: wineData.region || '',
-          grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
-          type: wineData.type || '',
-          imageUrl: wineData.imageUrl || '', 
-          uploadedImageUrl: responseData.data.imageUrl || '',
-          score: wineData.score || 0,
-          summary: wineData.tastingNotes || '', // Concise review
-          webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
-          rating: {
-            score: wineData.score || 0, 
-            source: wineData.ratingSource || 'AI Analysis',
-            review: wineData.tastingNotes || '' 
-          },
-          additionalReviews: [] 
-        }));
-        
-        setWineDataList(wines);
+      // Check if we already have results (sync response)
+      if (result.status === 'completed' && result.data) {
+        setWineDataList(result.data.wines);
         setPollingStatus('completed');
-        setUploadState({ isLoading: false, error: null });
+        setActiveFilters([]); // Reset filters for new results
         return;
       }
-
-      // Start polling for results
-      setJobId(jobId);
-      setPollingStatus('polling');
-      startPolling(jobId);
-
-    } catch (error: any) {
-      console.error('Error uploading image:', error);
-      setUploadState({ isLoading: false, error: error.message });
-      setPollingStatus('idle');
+      
+      // Otherwise start polling
+      startPolling(result.jobId);
+    } catch (error) {
+      console.error('Error submitting image for analysis:', error);
+      setPollingError('Failed to submit image for analysis. Please try again.');
+      setPollingStatus('failed');
     }
   };
 
+  // Start polling for results
   const startPolling = (jobId: string) => {
-    const pollInterval = setInterval(async () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    pollingIntervalRef.current = setInterval(async () => {
       try {
-        console.log(`Checking status for Job ID: ${jobId}`);
+        pollingCountRef.current += 1;
+        console.log(`Polling attempt ${pollingCountRef.current} for job ${jobId}`);
+        
         const response = await fetch(`/api/get-analysis-result?jobId=${jobId}`);
-        const data = await response.json();
-        console.log(`Job ID ${jobId} status:`, data.status);
-
-        if (data.status === 'completed') {
-          clearInterval(pollInterval);
+        const result = await response.json();
+        
+        if (result.status === 'completed' && result.data) {
+          clearInterval(pollingIntervalRef.current!);
+          setWineDataList(result.data.wines || []);
           setPollingStatus('completed');
-          setUploadState({ isLoading: false, error: null });
-          setJobId(null);
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-          
-          // Format and set results
-          if (data.data?.wines && Array.isArray(data.data.wines)) {
-            // *** Reuse the formatting logic from handleImageUpload ***
-             // Find the original uploaded image URL if stored, or use placeholder
-            const uploadedImageUrl = data.data.imageUrl || 'data:image/svg+xml;base64,...'; // Maybe get from KV if needed?
-
-            const formattedWines = data.data.wines.map((wineData: any) => {
-                // NOTE: Ensure this mapping matches the structure returned by the API
-                 return {
-                    name: wineData.name || '',
-                    winery: wineData.producer || wineData.winery || '',
-                    year: wineData.vintage || wineData.year || '',
-                    region: wineData.region || '',
-                    grapeVariety: wineData.grapeVarieties || wineData.varietal || '',
-                    type: wineData.type || '',
-                    imageUrl: wineData.imageUrl || '', 
-                    uploadedImageUrl: uploadedImageUrl, 
-                    score: wineData.score || 0,
-                    summary: wineData.tastingNotes || '', // Concise review
-                    webSnippets: wineData.webSnippets || 'No web results found.', // Map actual snippets
-                    rating: {
-                      score: wineData.score || 0, 
-                      source: wineData.ratingSource || 'AI Analysis',
-                      review: wineData.tastingNotes || '' 
-                    },
-                    additionalReviews: [] 
-                  };
-            });
-            setWineDataList(formattedWines);
-          } else {
-             throw new Error('Completed job missing wine data');
-          }
-
-        } else if (data.status === 'failed' || data.status === 'trigger_failed') {
-          console.error("Job failed:", data.error);
+          setActiveFilters([]); // Reset filters for new results
+        } else if (result.status === 'failed') {
+          clearInterval(pollingIntervalRef.current!);
+          setPollingError(result.message || 'Analysis failed. Please try again.');
           setPollingStatus('failed');
-          setUploadState({ isLoading: false, error: data.error || 'Analysis failed.' });
-          setJobId(null);
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-        } else if (data.status === 'not_found') {
-           console.error("Job ID not found during polling.");
-           setPollingStatus('failed');
-           setUploadState({ isLoading: false, error: 'Analysis job lost or expired.' });
-           setJobId(null);
-           if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-        } else {
-          // Still processing ('uploading', 'processing', 'processing_started')
-          console.log(`Job status: ${data.status}, continuing poll...`);
-          setPollingStatus('polling'); // Ensure status reflects polling
-          setUploadState({ isLoading: true, error: null }); // Keep loading true
+        } else if (pollingCountRef.current >= 60) { // 5 minutes timeout (5s interval × 60)
+          clearInterval(pollingIntervalRef.current!);
+          setPollingError('Analysis timed out. Please try again.');
+          setPollingStatus('failed');
         }
-
       } catch (error) {
         console.error('Error polling for results:', error);
-        // Don't stop polling on error, let it continue
+        clearInterval(pollingIntervalRef.current!);
+        setPollingError('Failed to retrieve analysis results. Please try again.');
+        setPollingStatus('failed');
       }
-    }, 2000); // Poll every 2 seconds
-
-    // Store interval ID for cleanup
-    pollingIntervalRef.current = pollInterval;
+    }, 5000); // Poll every 5 seconds
   };
 
-  // --- UI Rendering --- 
+  // Clean up polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Reset analysis when a new file is uploaded
+  useEffect(() => {
+    if (uploadState.file) {
+      setWineDataList([]);
+      setPollingStatus('idle');
+      setActiveFilters([]);
+    }
+  }, [uploadState.file]);
+
   return (
     <>
       <Head>
-        <title>Pick My Wine</title>
-        <meta name="description" content="AI-powered wine recommendations" />
+        <title>Wine Finder - Analyze your wine collection</title>
+        <meta name="description" content="AI-powered wine analysis and identification" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      
-      <main className="min-h-screen bg-gray-100 py-8">
-        <div className="container mx-auto px-4">
-          <header className="text-center mb-12">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Pick My Wine</h1>
-            <p className="text-xl text-gray-600">
-              Take a photo of a wine bottle or menu to get instant ratings and reviews
+      <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div className="text-center mb-10">
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+              Wine Finder
+            </h1>
+            <p className="text-gray-600 text-lg">
+              Upload an image of wine bottles to analyze and identify them
             </p>
-          </header>
+          </div>
           
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-xl mx-auto mb-8">
             <ImageUploader 
-              onUpload={handleImageUpload}
-              // Pass relevant state to ImageUploader if needed 
-              // (e.g., disable upload while processing?)
-              uploadState={{ 
-                  isLoading: uploadState.isLoading || pollingStatus === 'polling',
-                  error: uploadState.error
-              }} 
+              onStatusChange={handleUploadStatusChange}
+              onSubmit={handleSubmit}
+              uploadState={uploadState}
+              setUploadState={setUploadState}
+              progress={uploadProgress}
+              disabled={pollingStatus === 'polling'}
             />
-            
-            {/* Display polling status message */} 
-            {(uploadState.isLoading && pollingStatus === 'polling') && (
-              <div className="mt-6 text-center text-gray-600">
-                <p>Analyzing image... This may take a moment.</p>
-                {/* Optional: Add a spinner here */}
+          </div>
+          
+          <div className="text-center mt-4">
+            {pollingStatus === 'polling' && (
+              <div className="animate-pulse">
+                <p className="text-indigo-600">Analyzing your wine... this may take up to a minute.</p>
+                <div className="w-full max-w-md h-2 bg-gray-200 rounded-full mx-auto mt-4 overflow-hidden">
+                  <div className="h-full bg-indigo-500 rounded-full progress-bar animate-pulse"></div>
+                </div>
               </div>
             )}
             
-            {uploadState.error && (
-              <div className="mt-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
+            {pollingStatus === 'failed' && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
                 <strong className="font-bold">Error: </strong>
-                <span className="block sm:inline">{uploadState.error}</span>
+                <span className="block sm:inline">{pollingError || 'Something went wrong. Please try again.'}</span>
               </div>
             )}
-            
-            {/* Only show results when polling is complete and successful */} 
+
             {pollingStatus === 'completed' && wineDataList.length > 0 && (
               <div className="mt-8">
                 <h2 className="text-2xl font-semibold text-gray-800 mb-4">
                   Analysis Results {wineDataList.length > 1 ? `(${wineDataList.length} wines found)` : ''}
                 </h2>
+                
+                {/* Filters and sorting */}
+                <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-sm font-medium text-gray-700">Filter by:</span>
+                    {['Sweet', 'Dry', 'Fruity', 'Full Body', 'Light'].map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => handleFilterToggle(filter)}
+                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors
+                          ${activeFilters.includes(filter) 
+                            ? 'bg-indigo-600 text-white' 
+                            : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">Sort by:</span>
+                    <select 
+                      value={sortOption}
+                      onChange={(e) => setSortOption(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-1 text-sm"
+                    >
+                      <option value="score">Score</option>
+                      <option value="name">Name</option>
+                      <option value="year">Year</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {activeFilters.length > 0 && (
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-gray-600">Active filters:</span>
+                    {activeFilters.map(filter => (
+                      <span 
+                        key={filter}
+                        className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full flex items-center"
+                      >
+                        {filter}
+                        <button
+                          onClick={() => handleFilterToggle(filter)}
+                          className="ml-1 text-indigo-600 hover:text-indigo-800"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      onClick={() => setActiveFilters([])}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 ml-2"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                )}
+                
                 <div className="space-y-6">
-                  {wineDataList.map((wine, index) => (
-                    <WineCard 
-                      key={`${wine.name}-${index}`} 
-                      wine={wine} 
-                      isFeatured={index === 0 && wineDataList.length > 1} 
-                    />
-                  ))}
+                  {filteredAndSortedWines.length > 0 ? (
+                    filteredAndSortedWines.map((wine, index) => (
+                      <WineCard 
+                        key={`${wine.name}-${index}`} 
+                        wine={wine} 
+                        isFeatured={index === 0 && filteredAndSortedWines.length > 1}
+                        onTagClick={handleFilterToggle}
+                      />
+                    ))
+                  ) : (
+                    <div className="text-center py-6 bg-gray-50 rounded-lg">
+                      <p className="text-gray-500">No wines match your current filters</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
