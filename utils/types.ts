@@ -25,6 +25,21 @@ export interface Wine {
   aiSummary?: string;
   score?: number;
   summary?: string;
+  tastingNotes?: string;
+  webSnippets?: string;
+  pairings?: string[];
+  estimatedPrice?: string;
+  valueRatio?: number;
+  valueAssessment?: string;
+  flavorProfile?: {
+    fruitiness?: number;
+    acidity?: number;
+    tannin?: number;
+    body?: number;
+    sweetness?: number;
+    oak?: number;
+  };
+  isFromMenu?: boolean;
 }
 
 // Wine rating details
@@ -64,3 +79,17 @@ export interface PairingPreferences {
   light: boolean;
   'full-bodied': boolean;
 } 
+
+// New user preference interface for recommendations
+export interface UserPreferences {
+  pairingType?: 'meat' | 'fish' | 'cheese' | 'dessert' | 'vegetarian' | '';
+  maxPrice?: number;
+  preferredStyle?: 'red' | 'white' | 'rose' | 'sparkling' | '';
+}
+
+// Enhanced recommendation structure
+export interface WineRecommendation {
+  wine: Wine;
+  matchScore: number; // 1-100 score indicating how well it matches user preferences
+  reasons: string[]; // Explanations for why this wine was recommended
+}
