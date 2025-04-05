@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import ImageUploader from '../components/ImageUploader';
-import WineCard from '../components/WineCard';
-import { Wine, UploadState } from '../utils/types';
+import WineList from '../components/WineList';
+import { Wine, UploadState, UserPreferences } from '../utils/types';
 
 // Add a polling status type
 type PollingStatus = 'idle' | 'polling' | 'completed' | 'failed';
@@ -16,6 +16,7 @@ export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<PollingStatus>('idle');
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref to hold interval ID
+  const [isRestaurantMenu, setIsRestaurantMenu] = useState<boolean>(false);
 
   // --- Polling Logic --- 
   useEffect(() => {
@@ -191,8 +192,18 @@ export default function Home() {
             source: wineData.ratingSource || 'AI Analysis',
             review: wineData.tastingNotes || '' 
           },
+          // Enhanced data for the recommendation system
+          pairings: wineData.pairings || [],
+          estimatedPrice: wineData.estimatedPrice || '',
+          valueRatio: wineData.valueRatio || 5,
+          valueAssessment: wineData.valueAssessment || '',
+          flavorProfile: wineData.flavorProfile || {},
+          isFromMenu: wineData.isFromMenu || false,
           additionalReviews: [] 
         }));
+        
+        // Check if this appears to be a restaurant menu based on multiple wines from the same source
+        setIsRestaurantMenu(wines.length > 2 && wines.some(wine => wine.isFromMenu));
         
         setWineDataList(wines);
         setPollingStatus('completed');
@@ -349,15 +360,9 @@ export default function Home() {
                 <h2 className="text-2xl font-semibold text-gray-800 mb-4">
                   Analysis Results {wineDataList.length > 1 ? `(${wineDataList.length} wines found)` : ''}
                 </h2>
-                <div className="space-y-6">
-                  {wineDataList.map((wine, index) => (
-                    <WineCard 
-                      key={`${wine.name}-${index}`} 
-                      wine={wine} 
-                      isFeatured={index === 0 && wineDataList.length > 1} 
-                    />
-                  ))}
-                </div>
+                
+                {/* New WineList component with enhanced recommendations */}
+                <WineList wines={wineDataList} isRestaurantMenu={isRestaurantMenu} />
               </div>
             )}
           </div>
